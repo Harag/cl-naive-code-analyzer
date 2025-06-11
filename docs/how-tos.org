@@ -1,0 +1,55 @@
+# -*- mode:org;coding:utf-8 -*-
+
+#+AUTHOR: Phil Marneweck
+#+EMAIL: haragx@gmail.com
+#+DATE: Mon Jul 03 07:00:00 CEST 2025
+#+TITLE: cl-naive-code-analyzer How Tos
+#+BEGIN_EXPORT latex
+\clearpage
+#+END_EXPORT
+
+* Prologue                                                         :noexport:
+
+#+LATEX_HEADER: \usepackage[english]{babel}
+#+LATEX_HEADER: \usepackage[autolanguage]{numprint} % Must be loaded *after* babel.
+#+LATEX_HEADER: \usepackage{rotating}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{fancyhdr}
+#+LATEX_HEADER: \usepackage[margin=0.75in]{geometry}
+
+# LATEX_HEADER: \usepackage{indentfirst}
+# LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{parskip}
+
+#+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usetikzlibrary{positioning, fit, calc, shapes, arrows}
+#+LATEX_HEADER: \usepackage[underline=false]{pgf-umlsd}
+#+LATEX_HEADER: \usepackage{lastpage}
+#+LATEX_HEADER: \pagestyle{fancyplain}
+#+LATEX_HEADER: \pagenumbering{arabic}
+#+LATEX_HEADER: \lhead{\small{[Firs heading]}}
+#+LATEX_HEADER: \lfoot{}
+#+LATEX_HEADER: \cfoot{\tiny{\copyright{2025 Phil Marneweck}}}
+#+LATEX_HEADER: \rfoot{\small{Page \thepage \hspace{1pt} de \pageref{LastPage}}}
+
+* How To(s)
+
+** [Action Descirptor]
+
+[Short Description]
+
+#+BEGIN_SRC lisp
+[Source]
+#+END_SRC
+
+*** [Inspected Output] or [Output]
+
+*** Indepth
+
+** I have the NEED for SPEED!
+
+(time ...)
+
+# Local Variables:
+# eval: (auto-fill-mode 1)
+# End:

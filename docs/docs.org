@@ -1,0 +1,72 @@
+# -*- mode:org;coding:utf-8 -*-
+
+#+AUTHOR: Phil Marneweck
+#+EMAIL: haragx@gmail.com
+#+DATE: Mon Mar 03 07:00:00 CEST 2025
+#+TITLE: cl-naive-code-index Documentation
+
+#+BEGIN_EXPORT latex
+\clearpage
+#+END_EXPORT
+
+* Prologue                                                         :noexport:
+
+#+LATEX_HEADER: \usepackage[english]{babel}
+#+LATEX_HEADER: \usepackage[autolanguage]{numprint} % Must be loaded *after* babel.
+#+LATEX_HEADER: \usepackage{rotating}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usepackage{fancyhdr}
+#+LATEX_HEADER: \usepackage[margin=0.75in]{geometry}
+
+# LATEX_HEADER: \usepackage{indentfirst}
+# LATEX_HEADER: \setlength{\parindent}{0pt}
+#+LATEX_HEADER: \usepackage{parskip}
+
+#+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usetikzlibrary{positioning, fit, calc, shapes, arrows}
+#+LATEX_HEADER: \usepackage[underline=false]{pgf-umlsd}
+#+LATEX_HEADER: \usepackage{lastpage}
+#+LATEX_HEADER: \pagestyle{fancyplain}
+#+LATEX_HEADER: \pagenumbering{arabic}
+#+LATEX_HEADER: \lhead{\small{cl-naive-code-analyzer}}
+#+LATEX_HEADER: \chead{}
+#+LATEX_HEADER: \rhead{\small{User Manual}}
+#+LATEX_HEADER: \lfoot{}
+#+LATEX_HEADER: \cfoot{\tiny{\copyright{2021 - 2022 Phil Marneweck}}}
+#+LATEX_HEADER: \rfoot{\small{Page \thepage \hspace{1pt} de \pageref{LastPage}}}
+
+* Terms/Definitions 
+
+Can be found [[file:terms-and-definitions.org][here]].
+
+* Introduction
+
+* [Project name]
+
+* Tutorials
+
+Tutorials can be found [[file:tutorials.org][here]].
+
+* How Tos
+
+How Tos can be found [[file:how-tos.org][here]].
+
+* API
+
+** [special] =*tags*=
+
+** [function] tag-convert (tag)
+
+** [class] element (tag element-type attributes children)
+
+** [generic function] emit-element (type element-type tag element path &key &allow-other-keys)
+
+** [macro] with-js (&body body)
+
+
+* Epilogue                                                         :noexport:
+
+# Local Variables:
+# eval: (auto-fill-mode 1)
+# End:
+
