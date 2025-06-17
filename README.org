@@ -11,7 +11,7 @@ directly from source code. It performs structural parsing using
 Eclector and stores analysis results for efficient querying across
 project boundaries. Its primary goals are to support AI-assisted
 context discovery, dead code detection, and future inference of
-architectural patterns — all without relying on runtime
+architectural patterns — all without relying on runtime(*)
 instrumentation or central in-memory indexes.
 
 *WARNING:* The code was written by ChatGPT-4o use at your own risk.
@@ -23,8 +23,14 @@ A lot more needs to be done:
  - Documentation
  - Examples
  - Document strings on the top level - aka file summary/help/notes
+   - It looked simple but ChatGPT could not get it right and I did not
+     have the energy to hand craft it at the time.
  - Scrape TODOs etc
 
+/* You need code that compiles and can be loaded. The library loads
+the project before analysis is started to help fill in some gaps with
+the purely static approach.
+ 
 ** Alternatives Availabe to [project name]
 
 Could not find anything, but you are welcome to ping me if there is something.
@@ -91,7 +97,8 @@ How to do different things can be found [[file:docs/how-tos.org][here]].
 - eclector
 - trivial-gray-streams
 - cl-naive-store
-- SBCL Portable Walker
+- SBCL Portable Walker - From sandbox, which clobbered it together from
+  SBCL Code.
 
 ** Supported CL Implementations
 
