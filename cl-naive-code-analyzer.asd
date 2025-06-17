@@ -20,5 +20,7 @@
                (:file "src/cl-naive-code-analyzer"
                 :depends-on ("src/naive-store"))
                (:file "src/analyzers"
-                :depends-on ("src/cl-naive-code-analyzer"))))
+                :depends-on ("src/cl-naive-code-analyzer"))
+               (:file "src/query"
+                :depends-on ("src/naive-store"))))
 

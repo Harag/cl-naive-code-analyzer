@@ -5,11 +5,6 @@
 (defparameter *global-var* 42
   "A global variable used elsewhere.")
 
-;; A simple macro with a binding
-(defmacro my-macro (x)
-  "Macro that evaluates its argument twice."
-  `(list ,x ,x))
-
 (defun default-name ()
   "Returns a default name."
   "Anonymous")
@@ -104,6 +99,7 @@
 
 (defmethod no-doc-string-method ((y (eql :y)))
   "yes")
+
 (no-doc-string-method :y)
 
 (defun no-doc-string-function ()
@@ -119,6 +115,11 @@
 (defun ref-global ()
   "Reads the global var and adds 1."
   (1+ *global-var*))
+
+;; A simple macro with a binding
+(defmacro my-macro (x)
+  "Macro that evaluates its argument twice."
+  `(list ,x ,x))
 
 ;; Function using a macro
 (defun macro-user ()
@@ -139,5 +140,23 @@
    (inline-lambda :initform (lambda (x) (+ x 1))))
   (:documentation "Class to test different initforms."))
 
+(defun unused-function ()
+  "unused")
+
 ;; Track lambda binding separately
 (defparameter *inc-fn* (lambda (n) (+ n 1)))
+
+(defun test-optional (&optional (x 42) (y *global-var*))
+  (+ x y))
+
+(defun test-key (&key (foo "bar") (baz 100))
+  (list foo baz))
+
+(defun test-mixed (a &optional (b 1) &key (k 10) &aux (tmp 20))
+  (+ a b k tmp))
+
+(defun test-rest (x &rest args)
+  (cons x args))
+
+(defmethod test-method ((x integer) (y (eql :foo)))
+  (+ x 1))

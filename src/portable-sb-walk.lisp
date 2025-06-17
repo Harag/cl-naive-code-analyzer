@@ -208,6 +208,37 @@
 ;;;; other environment hacking, not so SBCL-specific as the
 ;;;; environment hacking in the previous section
 
+#|
+(defmacro with-new-definition-in-environment
+((new-env old-env macrolet/flet/labels-form) &body body)
+(let ((functions (make-symbol "Functions"))
+(macros (make-symbol "Macros")))
+`(let ((,functions ())
+(,macros ()))
+(ecase (car ,macrolet/flet/labels-form)
+((flet labels)
+(dolist (fn (cadr ,macrolet/flet/labels-form))
+(push fn ,functions)))
+((macrolet)
+(dolist (mac (cadr ,macrolet/flet/labels-form))
+(push (list (car mac)
+(convert-macro-to-lambda (cadr mac)
+(cddr mac)
+,old-env
+(string (car mac))))
+,macros))))
+(with-augmented-environment
+(,new-env ,old-env :functions ,functions :macros ,macros)
+,@body))))
+
+(defun convert-macro-to-lambda (llist body env &optional (name "dummy macro"))
+(declare (ignorable llist body env name))
+(let ((gensym (make-symbol name)))
+(sandbox:eval `(defmacro ,gensym ,llist ,@body)
+;; FIXME: ENV)
+(macro-function gensym))))
+|#
+
 (defmacro with-new-definition-in-environment
     ((new-env old-env macrolet/flet/labels-form) &body body)
   (let ((functions (make-symbol "Functions"))
@@ -328,7 +359,6 @@
   (and (or (var-declaration 'special var env)
            (var-globally-special-p var))
        t))
-
 ;; FIXME
 ;; (eq (info :variable :kind symbol) :special)
 (defun var-globally-special-p (symbol)

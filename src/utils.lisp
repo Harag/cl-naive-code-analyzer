@@ -1,13 +1,52 @@
 (in-package :cl-naive-code-analyzer)
 
-(defun export-symbol (sym)
-  (when (symbolp sym)
-    `(:name ,(string-downcase (symbol-name sym))
+(defparameter *form-analyzers* (make-hash-table :test 'equal))
 
-            :package ,(string-downcase (package-name (symbol-package sym))))))
+(defun export-symbol (sym &optional (default-package nil))
+  "Safe export: handles symbol, string, or a list like (SETF FOO).
+   Returns plist: (:name ... :package ...), or for compound names,
+   (:name (...subsymbol...) :package ...)."
+  (cond
+    ;; Compound name: e.g. (SETF FOO)
+    ((and (listp sym) (symbolp (car sym)))
+     ;; Recursively export each element and preserve list
+     (let ((items (mapcar (lambda (x) (if (symbolp x)
+                                          (symbol-name x)
+                                          (prin1-to-string x)))
+                          sym)))
+       `(:name ,items
+         :package ,(or (and default-package
+                            (etypecase default-package
+                              (string default-package)
+                              (symbol (string default-package))
+                              (package (package-name default-package))))
+                       (when (symbolp (second sym))
+                         (package-name (symbol-package (second sym))))
+                       :|<uninterned>|))))
+    ;; Single symbol
+    ((symbolp sym)
+     `(:name ,(symbol-name sym)
+       :package ,(or (and (symbol-package sym)
+                          (package-name (symbol-package sym)))
+                     (and default-package
+                          (etypecase default-package
+                            (string default-package)
+                            (symbol (string default-package))
+                            (package (package-name default-package))))
+                     :|<uninterned>|)))
+    ;; String literal fallback
+    ((stringp sym)
+     `(:name ,sym
+       :package ,(string (or default-package "common-lisp"))))
+    (t
+     (error "Cannot export non-symbol: ~S" sym))))
 
 (defun normalize-name (x)
-  (string-downcase (if (consp x) (symbol-name (car x)) (symbol-name x))))
+  (if (stringp x)
+      x
+      (string-downcase (if (consp x)
+                           (symbol-name (car x))
+                           (symbol-name x)))))
 
 (defun normalize-symbol-list (lst)
   (mapcar #'normalize-name lst))
