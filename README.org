@@ -1,6 +1,7 @@
 * cl-naive-code-analyzer
 
-Creates an index of code with a naive "who calls" info. 
+cl-naive-code-analyzer is a Common Lisp library designed to statically
+analyze one or more Lisp projects.
 
 * cl-naive-code-analyzer
 
@@ -14,7 +15,8 @@ context discovery, dead code detection, and future inference of
 architectural patterns — all without relying on runtime(*)
 instrumentation or central in-memory indexes.
 
-*WARNING:* The code was written by ChatGPT-4o use at your own risk.
+*WARNING:* The code was written by ChatGPT-4o (with extensive verbal
+abuse from me) use at your own risk.
 
 A lot more needs to be done:
  - Unit Tests
@@ -95,6 +97,11 @@ Simple step by step [[file:docs/tutorials.org][tutorial(s)]] to get you started 
 
 How to do different things can be found [[file:docs/how-tos.org][here]].
 
+*** Quick & Dirty
+#+BEGIN_SRC lisp
+(index-project-definitions "test-code" "~/source/naive/cl-naive-code-analyzer/tests/test-code/")
+#+END_SRC
+
 ** Dependencies
 
 - eclector
@@ -108,6 +115,8 @@ How to do different things can be found [[file:docs/how-tos.org][here]].
 Should support all compliant implementations, no implementation
 specific code was used.
 
+
+``````
 ** Tests
 
 To load and run the tests, clone the project and then:
