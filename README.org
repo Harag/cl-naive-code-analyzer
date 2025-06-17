@@ -4,9 +4,24 @@ Creates an index of code with a naive "who calls" info.
 
 * cl-naive-code-analyzer
 
-cl-naive-code-analyzer is a Common Lisp library designed to statically analyze one or more Lisp projects by extracting function and macro definitions, call relationships, lambda lists, and variable usage directly from source code. It performs structural parsing using Eclector and stores analysis results for efficient querying across project boundaries. Its primary goals are to support AI-assisted context discovery, dead code detection, and future inference of architectural patterns — all without relying on runtime instrumentation or central in-memory indexes.
+cl-naive-code-analyzer is a Common Lisp library designed to statically
+analyze one or more Lisp projects by extracting function and macro
+definitions, call relationships, lambda lists, and variable usage
+directly from source code. It performs structural parsing using
+Eclector and stores analysis results for efficient querying across
+project boundaries. Its primary goals are to support AI-assisted
+context discovery, dead code detection, and future inference of
+architectural patterns — all without relying on runtime
+instrumentation or central in-memory indexes.
 
-This code is pre ALPHA so use at own risk.
+*WARNING:* The code was written by ChatGPT-4o use at your own risk.
+
+A lot more needs to be done:
+ - Unit Tests
+ - More refactoring
+ - Lots more useful predefined queries
+ - Documentation
+ - Examples
 
 ** Alternatives Availabe to [project name]
 
@@ -14,25 +29,46 @@ Could not find anything, but you are welcome to ping me if there is something.
 
 ** Design
 
-The design of cl-naive-code-analyzer emphasizes static, persistent, and extensible Common Lisp source analysis without relying on runtime behavior. It parses source files using Eclector with custom stream tracking to capture precise boundaries for forms and metadata. Each top-level form is dispatched to an analyzer via a hash-based registry, allowing modular support for defun, defmethod, macros, and more — with a fallback analyzer handling unknown forms using lambda-list heuristics. The analysis results are stored persistently, enabling cross-project querying without re-parsing code. The system avoids global indexing state, instead relying solely on serialized per-form analysis records, making it robust, decoupled, and query-oriented from the ground up.
+The design of cl-naive-code-analyzer emphasizes static, persistent,
+and extensible Common Lisp source analysis without relying on runtime
+behavior. It parses source files using Eclector with custom stream
+tracking to capture precise boundaries for forms and metadata. Each
+top-level form is dispatched to an analyzer via a hash-based registry,
+allowing modular support for defun, defmethod, macros, and more — with
+a fallback analyzer handling unknown forms using lambda-list
+heuristics. The analysis results are stored persistently, enabling
+cross-project querying without re-parsing code. The system avoids
+global indexing state, instead relying solely on serialized per-form
+analysis records, making it robust, decoupled, and query-oriented from
+the ground up.
 
 ** Use Cases
 
 Use Cases for cl-naive-code-analyzer:
 
- - AI Code Context: Retrieve relevant and related source code across multiple projects to provide meaningful context to AI tools like code assistants or reviewers.
+ - AI Code Context: Retrieve relevant and related source code across
+   multiple projects to provide meaningful context to AI tools like
+   code assistants or reviewers.
 
- - Dead Code Detection: Identify unused functions, methods, or macros by analyzing call graphs and reference chains.
+ - Dead Code Detection: Identify unused functions, methods, or macros
+   by analyzing call graphs and reference chains.
 
- - Code Navigation & Search: Build powerful IDE features like cross-referencing, jump-to-definition, or usage tracking across multi-project systems.
+ - Code Navigation & Search: Build powerful IDE features like
+   cross-referencing, jump-to-definition, or usage tracking across
+   multi-project systems.
 
- - Dependency Analysis: Understand how functions and macros depend on one another for refactoring or modularization.
+ - Dependency Analysis: Understand how functions and macros depend on
+   one another for refactoring or modularization.
 
- - Documentation Extraction: Generate human-readable summaries or API docs from extracted form metadata, lambda lists, and docstrings.
+ - Documentation Extraction: Generate human-readable summaries or API
+   docs from extracted form metadata, lambda lists, and docstrings.
 
- - Design Inference (Future): Analyze architecture-level patterns, usage conventions, or project design idioms based on symbolic structure.
+ - Design Inference (Future): Analyze architecture-level patterns,
+   usage conventions, or project design idioms based on symbolic
+   structure.
 
-These features make it useful for tooling, auditing, documentation, and AI-assisted development workflows.
+These features make it useful for tooling, auditing, documentation,
+and AI-assisted development workflows.
 
 
 ** Documentation
@@ -54,7 +90,8 @@ How to do different things can be found [[file:docs/how-tos.org][here]].
 
 ** Supported CL Implementations
 
-Should support all compliant implementations, no implementation specific code was used.
+Should support all compliant implementations, no implementation
+specific code was used.
 
 ** Tests
 
