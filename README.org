@@ -22,6 +22,8 @@ A lot more needs to be done:
  - Lots more useful predefined queries
  - Documentation
  - Examples
+ - Document strings on the top level - aka file summary/help/notes
+ - Scrape TODOs etc
 
 ** Alternatives Availabe to [project name]
 
@@ -86,7 +88,10 @@ How to do different things can be found [[file:docs/how-tos.org][here]].
 
 ** Dependencies
 
-[Dependencies per ASDF]
+- eclector
+- trivial-gray-streams
+- cl-naive-store
+- SBCL Portable Walker
 
 ** Supported CL Implementations
 
