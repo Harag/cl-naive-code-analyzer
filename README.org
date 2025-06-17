@@ -26,10 +26,13 @@ A lot more needs to be done:
    - It looked simple but ChatGPT could not get it right and I did not
      have the energy to hand craft it at the time.
  - Scrape TODOs etc
+ - naive-store  code  needs  cleanup  and some  safety  checks  and  a
+   separate load function once analysis is done.
 
 /* You need code that compiles and can be loaded. The library loads
 the project before analysis is started to help fill in some gaps with
-the purely static approach.
+the purely static approach. But once the analysis meta data is
+harvested you only need to load the store to query the information.
  
 ** Alternatives Availabe to [project name]
 
