@@ -23,8 +23,6 @@
    (local-variable-uses :accessor analysis-local-variable-uses :initform nil)
    (lexical-definitions :accessor analysis-lexical-definitions :initform nil)
    (dynamic-definitions :accessor analysis-dynamic-definitions :initform nil)
-   (parameters :accessor analysis-parameters :initform nil)
-   (docstring :accessor analysis-docstring :initform nil)
    (raw-body :accessor analysis-raw-body :initform nil)))
 
 (defclass analyzer-client (eclector.concrete-syntax-tree:cst-client)
@@ -153,10 +151,9 @@ result)
 
 (defgeneric write-analysis (analysis filename &key))
 
-;;TODO: Need to do specializations per analysis class type at the
-;;moment we have stuff that are in an analysis that is not valid for
-;;all analysis.
-(defmethod write-analysis ((a analysis) filename  &key)
+;; Only generic slots are handled here.  Subclasses specialize this
+;; method to add slots like docstrings or parameters where applicable.
+(defmethod write-analysis ((a analysis) filename &key)
   `(,@`(:name , (analysis-name a)
         :package ,(if (packagep (analysis-package a))
                       (package-name (analysis-package a))
@@ -177,39 +174,76 @@ result)
         :macro-calls ,(mapcar #'export-symbol (analysis-macro-calls a))
         :variable-uses ,(mapcar #'export-symbol (analysis-variable-uses a))
         :lexical-definitions ,(mapcar #'export-symbol (analysis-lexical-definitions a))
-        :dynamic-definitions ,(mapcar #'export-symbol (analysis-dynamic-definitions a)))
-       ;; ✅ :parameters if any
-       ,@(when (analysis-parameters a)
-           `(:parameters ,(analysis-parameters a)))
-       ;; ✅ :docstring if any
-       ,@(when (analysis-docstring a)
-           `(:docstring ,(analysis-docstring a)))
-       #|
-       ;; ✅ defpackage-specific slots if any
-       ,@(when (typep a 'defpackage-analysis)
-       (append
-       (when (analysis-nicknames a)
-       `(:nicknames ,(analysis-nicknames a)))
-       (when (analysis-uses a)
-       `(:uses ,(analysis-uses a)))
-       (when (analysis-exports a)
-       `(:exports ,(analysis-exports a)))
-       (when (analysis-shadows a)
-       `(:shadows ,(analysis-shadows a)))
-       (when (analysis-shadowing-imports a)
-       `(:shadowing-imports ,(analysis-shadowing-imports a)))
-       (when (analysis-imports a)
-       `(:imports ,(analysis-imports a)))
-       (when (analysis-interns a)
-       `(:interns ,(analysis-interns a)))
-       (when (analysis-other-options a)
-       `(:other-options ,(analysis-other-options a)))))
-       |#))
+        :dynamic-definitions ,(mapcar #'export-symbol (analysis-dynamic-definitions a))))
 
 (defmethod write-analysis ((a defun-analysis) filename &key)
   `(,@(call-next-method)
     ,@(when (analysis-lambda-info a)
-        `(:lambda-info ,(analysis-lambda-info a)))))
+        `(:lambda-info ,(analysis-lambda-info a)))
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))))
+
+(defmethod write-analysis ((a defmethod-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defmacro-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defgeneric-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defsetf-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a deftype-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-parameters a)
+        `(:parameters ,(analysis-parameters a)))
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defclass-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defstruct-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defparameter-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a define-condition-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
+
+(defmethod write-analysis ((a defpackage-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-docstring a)
+        `(:docstring ,(analysis-docstring a)))) )
 
 #|
 (defmethod write-analysis ((a defclass-analysis) filename &key)
