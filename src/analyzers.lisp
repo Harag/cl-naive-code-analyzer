@@ -1,30 +1,46 @@
 (in-package :cl-naive-code-analyzer)
 
 (defclass defun-analysis (analysis)
-  ((lambda-info :accessor analysis-lambda-info :initform nil)))
+  ((lambda-info :accessor analysis-lambda-info :initform nil)
+   (parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
-(defclass defmethod-analysis (analysis) ())
+(defclass defmethod-analysis (analysis)
+  ((parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
-(defclass define-condition-analysis (analysis) ())
+(defclass define-condition-analysis (analysis)
+  ((docstring :accessor analysis-docstring :initform nil)))
 
 
 (defclass defclass-analysis (analysis)
   ((slots :accessor analysis-slots :initform nil)
-   (superclasses :accessor analysis-superclasses :initform nil)))
+   (superclasses :accessor analysis-superclasses :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
-(defclass defparameter-analysis (analysis) ())
+(defclass defparameter-analysis (analysis)
+  ((docstring :accessor analysis-docstring :initform nil)))
 
-(defclass defmacro-analysis (analysis) ())
+(defclass defmacro-analysis (analysis)
+  ((parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
 
-(defclass deftype-analysis (analysis) ())
+(defclass deftype-analysis (analysis)
+  ((parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
-(defclass defgeneric-analysis (analysis) ())
+(defclass defgeneric-analysis (analysis)
+  ((parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
 (defclass defstruct-analysis (analysis)
-  ((slots :accessor analysis-slots :initform nil)))
+  ((slots :accessor analysis-slots :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
-(defclass defsetf-analysis (analysis) ())
+(defclass defsetf-analysis (analysis)
+  ((parameters :accessor analysis-parameters :initform nil)
+   (docstring :accessor analysis-docstring :initform nil)))
 
 (defclass define-symbol-macro-analysis (analysis) ())
 
