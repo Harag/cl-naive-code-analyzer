@@ -245,12 +245,10 @@ result)
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))) )
 
-#|
 (defmethod write-analysis ((a defclass-analysis) filename &key)
-`(,@(call-next-method a filename)
-:superclasses ,(mapcar #'export-symbol (analysis-superclasses a))
-:slots ,(mapcar #'serialize-slot (analysis-slots a))))
-|#
+  `(,@(call-next-method a filename)
+    :superclasses ,(mapcar #'export-symbol (analysis-superclasses a))
+    :slots ,(mapcar #'serialize-slot (analysis-slots a))))
 
 (defun analyze-project (file-paths &key (name "default-project"))
   (let ((project (make-instance 'code-project :name name)))
