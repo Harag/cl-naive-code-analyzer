@@ -1,0 +1,123 @@
+* cl-naive-code-analyzer
+
+cl-naive-code-analyzer is a Common Lisp library designed analyze the
+code Lisp projects. Most of the analysis is static, very little
+runtime information is used.
+
+* cl-naive-code-analyzer
+
+cl-naive-code-analyzer is a Common Lisp library designed to statically
+analyze one or more Lisp projects by extracting function and macro
+definitions, call relationships, lambda lists, and variable usage
+directly from source code. It performs structural parsing using
+Eclector and stores analysis results for efficient querying across
+project boundaries. Its primary goals are to support AI-assisted
+context discovery, dead code detection, and future inference of
+architectural patterns.
+
+*WARNING:* The code was written by ChatGPT-4o (with extensive verbal
+abuse from me) use at your own risk.
+
+*WARNING:* The code is PRE-ALPHA and changing weekly with breaking changes!
+
+A lot more needs to be done:
+ - Unit Tests
+ - More refactoring
+ - Lots more useful predefined queries
+ - Documentation
+ - Examples
+ - Document strings on the top level - aka file summary/help/notes
+   - It looked simple but ChatGPT could not get it right and I did not
+     have the energy to hand craft it at the time.
+ - Scrape TODOs etc
+ - naive-store  code  needs  cleanup  and some  safety  checks  and  a
+   separate load function once analysis is done.
+
+/* You need code that compiles and can be loaded. The library loads
+the project before analysis is started to help fill in some gaps with
+the purely static approach. But once the analysis meta data is
+harvested you only need to load the store to query the information.
+ 
+** Alternatives Availabe to [project name]
+
+There are other alternatives but I wanted to learn about code
+analyzers and push ChatGPT to its limits.
+
+Right now I am to lazy to look them up and do the diffs for
+you. Besides I have lots of other pressing todos on this project.
+
+** Design
+
+
+
+** Use Cases
+
+Use Cases for cl-naive-code-analyzer:
+
+ - AI Code Context: Retrieve relevant and related source code across
+   multiple projects to provide meaningful context to AI tools like
+   code assistants or reviewers.
+
+ - Dead Code Detection: Identify unused functions, methods, or macros
+   by analyzing call graphs and reference chains.
+
+ - Code Navigation & Search: Build powerful IDE features like
+   cross-referencing, jump-to-definition, or usage tracking across
+   multi-project systems.
+
+ - Dependency Analysis: Understand how functions and macros depend on
+   one another for refactoring or modularization.
+
+ - Documentation Extraction: Generate human-readable summaries or API
+   docs from extracted form metadata, lambda lists, and docstrings.
+
+ - Design Inference (Future): Analyze architecture-level patterns,
+   usage conventions, or project design idioms based on symbolic
+   structure.
+
+These features make it useful for tooling, auditing, documentation,
+and AI-assisted development workflows.
+
+
+** Documentation
+
+[[file:docs/docs.org][Documentation]] can be found in the docs folder in the repository.
+
+
+** Tutorials
+
+Simple step by step [[file:docs/tutorials.org][tutorial(s)]] to get you started fast.
+
+** How To(s)
+
+How to do different things can be found [[file:docs/how-tos.org][here]].
+
+*** Quick & Dirty
+#+BEGIN_SRC lisp
+(index-project-definitions "test-code" "~/source/naive/cl-naive-code-analyzer/tests/test-code/")
+#+END_SRC
+
+** Dependencies
+
+- eclector
+- concrete-syntax-trees
+- trivial-gray-streams
+- cl-naive-store
+
+
+** Supported CL Implementations
+
+Should support all compliant implementations, no implementation
+specific code was used.
+
+
+``````
+** Tests
+
+To load and run the tests, clone the project and then:
+
+#+BEGIN_SRC lisp
+  (ql:quickload :cl-naive-code-analyzer.tests)
+
+  (cl-naive-tests:report (cl-naive-tests:run))
+#+END_SRC

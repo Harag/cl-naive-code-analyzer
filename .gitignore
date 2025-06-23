@@ -1,0 +1,17 @@
+$ cat .gitignore
+
+# Can ignore specific files
+#.DS_Store
+
+# Use wildcards as well
+*~
+*.fasl
+*#
+*.#
+.#*
+
+junit-results.xml
+system-index.txt
+tests/artifacts
+src/test.lisp
+
