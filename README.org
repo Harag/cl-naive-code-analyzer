@@ -1,7 +1,8 @@
 * cl-naive-code-analyzer
 
-cl-naive-code-analyzer is a Common Lisp library designed to statically
-analyze one or more Lisp projects.
+cl-naive-code-analyzer is a Common Lisp library designed analyze the
+code Lisp projects. Most of the analysis is static, very little
+runtime information is used.
 
 * cl-naive-code-analyzer
 
@@ -12,11 +13,12 @@ directly from source code. It performs structural parsing using
 Eclector and stores analysis results for efficient querying across
 project boundaries. Its primary goals are to support AI-assisted
 context discovery, dead code detection, and future inference of
-architectural patterns — all without relying on runtime(*)
-instrumentation or central in-memory indexes.
+architectural patterns.
 
 *WARNING:* The code was written by ChatGPT-4o (with extensive verbal
 abuse from me) use at your own risk.
+
+*WARNING:* The code is PRE-ALPHA and changing weekly with breaking changes!
 
 A lot more needs to be done:
  - Unit Tests
@@ -38,22 +40,15 @@ harvested you only need to load the store to query the information.
  
 ** Alternatives Availabe to [project name]
 
-Could not find anything, but you are welcome to ping me if there is something.
+There are other alternatives but I wanted to learn about code
+analyzers and push ChatGPT to its limits.
+
+Right now I am to lazy to look them up and do the diffs for
+you. Besides I have lots of other pressing todos on this project.
 
 ** Design
 
-The design of cl-naive-code-analyzer emphasizes static, persistent,
-and extensible Common Lisp source analysis without relying on runtime
-behavior. It parses source files using Eclector with custom stream
-tracking to capture precise boundaries for forms and metadata. Each
-top-level form is dispatched to an analyzer via a hash-based registry,
-allowing modular support for defun, defmethod, macros, and more — with
-a fallback analyzer handling unknown forms using lambda-list
-heuristics. The analysis results are stored persistently, enabling
-cross-project querying without re-parsing code. The system avoids
-global indexing state, instead relying solely on serialized per-form
-analysis records, making it robust, decoupled, and query-oriented from
-the ground up.
+
 
 ** Use Cases
 
@@ -105,10 +100,10 @@ How to do different things can be found [[file:docs/how-tos.org][here]].
 ** Dependencies
 
 - eclector
+- concrete-syntax-trees
 - trivial-gray-streams
 - cl-naive-store
-- SBCL Portable Walker - From sandbox, which clobbered it together from
-  SBCL Code.
+
 
 ** Supported CL Implementations
 

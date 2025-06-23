@@ -39,7 +39,12 @@
      `(:name ,sym
        :package ,(string (or default-package "common-lisp"))))
     (t
-     (error "Cannot export non-symbol: ~S" sym))))
+     (error "Cannot export: ~S" sym))))
+
+(defun safe-normalize-name (form)
+  (when (and (consp form)
+             (symbolp (second form)))
+    (normalize-name (second form))))
 
 (defun normalize-name (x)
   (if (stringp x)
@@ -71,14 +76,6 @@
 (defun offset-to-line (offset line-map)
   (aref line-map offset))
 
-(defun flatten-typed-lambda-list (lambda-list)
-  "Extract symbols from lambda-list that may include type specifiers."
-  (mapcar (lambda (item)
-            (if (symbolp item)
-                item
-                (first item)))  ; handles (x string)
-          lambda-list))
-
 (defun normalize-reader-macros (form)
   (cond
     ((consp form)
@@ -98,11 +95,6 @@
                           (rplacd (last form) (normalize-reader-macros tail))))))))
     (t form)))
 
-(defun safe-normalize-name (form)
-  (when (and (consp form)
-             (symbolp (second form)))
-    (normalize-name (second form))))
-
 (defun form-is-definition-p (form)
   (let ((head (car form)))
     (cond
@@ -117,6 +109,7 @@
        ;; Best effort guess — this is a macro and might define something
        :possible-user)
       (t nil))))
+
 (defclass tracking-stream (trivial-gray-streams:fundamental-character-input-stream)
   ((underlying :initarg :underlying :accessor tracking-stream-underlying)
    (position :initform 0 :accessor tracking-stream-position)

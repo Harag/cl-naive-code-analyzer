@@ -18,11 +18,12 @@
     (setf *universe* (add-multiverse-element
                       *multiverse*
                       (make-instance
-                       'universe
+                       'cl-naive-store:universe
                        :name "code-index-universe"
                        :multiverse *multiverse*
+
                        :location "~/code-index-multiverse/code-index-universe/" ;Setting the location on disk.
-                       :store-class 'store)))
+                       :store-class 'cl-naive-store:store)))
     ;;Persist store definition
     (cl-naive-store:persist *multiverse* :definitions-only-p t)))
 

@@ -1,8 +1,22 @@
 (in-package :cl-naive-code-analyzer)
 
+(defclass code-file ()
+  ((path :accessor file-path :initarg :path)
+   (analyses :accessor file-analyses :initform nil)))
+
+(defclass code-project ()
+  ((name :accessor project-name :initarg :name :initform nil)
+   (files :accessor project-files :initarg :files :initform nil)))
+
 (defclass analysis ()
-  ((name :accessor analysis-name :initform nil)
-   (fn-calls :accessor analysis-fn-calls :initform nil)
+  ((name :accessor analysis-name :initarg :name :initform nil)
+   (kind :accessor analysis-kind :initarg :kind :initform nil)
+   (cst :accessor analysis-cst :initarg :form :initform nil)
+   (start :accessor analysis-start :initarg :start :initform nil)
+   (end :accessor analysis-end :initarg :end :initform nil)
+   (line :accessor analysis-line :initarg :line :initform nil)
+   (package :accessor analysis-package :initarg :package :initform (find-package :cl))
+   (function-calls :accessor analysis-function-calls :initform nil)
    (macro-calls :accessor analysis-macro-calls :initform nil)
    (variable-uses :accessor analysis-variable-uses :initform nil)
    (local-function-calls :accessor analysis-local-function-calls :initform nil)
@@ -13,7 +27,7 @@
    (docstring :accessor analysis-docstring :initform nil)
    (raw-body :accessor analysis-raw-body :initform nil)))
 
-(defclass analyzer-client (eclector.parse-result:parse-result-client)
+(defclass analyzer-client (eclector.concrete-syntax-tree:cst-client)
   ((forms :initform '() :accessor client-forms)
    (form-positions :initform (make-hash-table :test 'eq) :accessor client-form-positions)
    (current-position :initform nil :accessor client-current-position)
@@ -21,7 +35,8 @@
    (package :accessor client-package :initarg :package :initform (find-package :cl))))
 
 (defmethod eclector.reader:interpret-symbol ((client analyzer-client)
-                                             input-stream package-name symbol-name internp)
+                                             input-stream package-name
+                                             symbol-name internp)
   (cond
     ;; #:foo => make-symbol
     ((null package-name)
@@ -47,12 +62,14 @@
         (code-char 0))
       (call-next-method)))
 
+#|
 (defmethod eclector.parse-result:make-expression-result ((client analyzer-client) result children source)
-  (setf (gethash result (client-form-positions client))
-        (cons (client-current-position client)
-              (client-last-position client)))
-  (push result (client-forms client))
-  result)
+(setf (gethash result (client-form-positions client))
+(cons (client-current-position client)
+(client-last-position client)))
+(push result (client-forms client))
+result)
+|#
 
 (defmethod eclector.reader:evaluate-feature-expression
     ((client analyzer-client) expression)
@@ -64,7 +81,7 @@
   `(:to-expand ,expression))
 
 (defun parse-file-with-eclector (file-path)
-  (let* ((forms '())
+  (let* ((analyses '())
          (client (make-instance 'analyzer-client))
          (eclector.reader:*client* client)
          (file-contents (alexandria:read-file-into-string file-path))
@@ -79,442 +96,122 @@
               (find-package :cl))
         (loop
           for start = (tracking-stream-position tracking)
-          for form = (handler-case
-                         (eclector.reader:read tracking nil nil)
-                       (eclector.reader:unknown-character-name (c)
-                         ;; Safely print the error
-                         (format *error-output* "Reader error at position ~A: ~A~%"
-                                 (tracking-stream-position tracking)
-                                 c)
-                         (read-char nil nil)
-                         nil))
-          while form
+          for cst = (handler-case
+                        (eclector.concrete-syntax-tree:read tracking nil nil)
+                      (eclector.reader:unknown-character-name (c)
+                        ;; Safely print the error
+                        (format *error-output* "Reader error at position ~A: ~A~%"
+                                (tracking-stream-position tracking)
+                                c)
+                        (read-char nil nil)
+                        nil))
+          while cst
           for end = (tracking-stream-position tracking)
           for line = (offset-to-line start line-map)
+          for head = (concrete-syntax-tree:raw
+                      (concrete-syntax-tree:first cst))
           do (progn
-               (when (eq (first form) 'in-package)
-                 (let ((pkg-name (second form)))
+
+               ;;Manually trying to track package usage to resolve
+               ;;symbol pacakages elsewhere.
+               (when (eq head
+                         'in-package)
+                 (let ((pkg-name (concrete-syntax-tree:raw
+                                  (concrete-syntax-tree:second cst))))
                    (setf (client-package client)
                          (if (symbolp pkg-name)
                              (find-package pkg-name)
                              (find-package (string pkg-name))))))
 
-               (setf (client-current-position client) start)
-               (setf (client-last-position client) end)
-               (push (list :form form
-                           :start start
-                           :end end
-                           :line line
-                           :package (client-package client))
-                     forms))))
-      (nreverse forms))))
+               (let ((analysis (make-analyzer head)))
 
-(defun parse-file-forms (file-path)
-  (mapcar #'(lambda (entry)
-              (getf entry :form))
-          (parse-file-with-eclector file-path)))
+                 (setf (analysis-start analysis) start)
+                 (setf (analysis-end analysis) end)
+                 (setf (analysis-line analysis) line)
+                 ;;TODO: Do we need both client and analysis package
+                 ;;slots? I dont think so.
+                 (setf (analysis-package analysis) (client-package client))
+                 (setf (analysis-cst analysis) cst)
 
-(defun walk-analysis-hook (form env analysis)
-  (cond
-    ((symbolp form)
-     (cond ((member form env :test #'equal)
-            (pushnew form (analysis-local-variable-uses analysis) :test #'equal))
-           (t
-            (pushnew form (analysis-variable-uses analysis) :test #'equal))))
-    ((and (consp form)
-          (symbolp (car form)))
-     (let ((head (car form)))
-       (cond
-         ((macro-function head)
-          (pushnew head (analysis-macro-calls analysis) :test #'equal))
-         ((member head env :test #'equal)
-          (pushnew head (analysis-local-function-calls analysis) :test #'equal))
-         (t
-          (pushnew head (analysis-fn-calls analysis) :test #'equal))))))
-  nil)
+                 (setf (client-current-position client) start)
+                 (setf (client-last-position client) end)
 
-(defun walk-form (form args analysis)
-  (format t "~&[WALK-FORM] Root form: ~S~%" form)
-  ;; Build a lexenv with the known local variables
-  (let ((env (portable-sb-walker::make-lexenv :vars args)))
-    (portable-sb-walker:walk-form
-     form
-     env
-     (lambda (subform context walker-env)
-       (format t "~&[WALK] Subform: ~S | Context: ~S~%" subform context)
+                 (push analysis analyses))))
+        (nreverse analyses)))))
 
-       ;; Detect real function or macro calls:
-       (when (and (consp subform)
-                  (symbolp (car subform))
-                  (or (macro-function (car subform))
-                      (fboundp (car subform))))
-         (let ((head (car subform)))
-           (format t "~&[WALK] Call Head: ~S~%" head)
-           (cond
-             ((macro-function head)
-              (pushnew head (analysis-macro-calls analysis) :test #'equal))
-             (t
-              (pushnew head (analysis-fn-calls analysis) :test #'equal)))))
+(defun analyze-file (file-path &optional (project nil))
+  (declare (ignore project))
+  (let (;;First we read the file and create the barebones analysis for
+        ;;each form.
+        (analyses (parse-file-with-eclector file-path))
+        (code-file (make-instance 'code-file :path file-path)))
+    (dolist (analysis analyses)
+      ;;Do type specific deeper analysis
+      (push (analyze-cst (analysis-cst analysis) analysis)
+            (file-analyses code-file)))
+    code-file))
 
-       ;; Detect variable usage (local or global)
-       (when (symbolp subform)
-         (cond
-           ((member subform (portable-sb-walker::lexenv-vars walker-env) :test #'eq)
-            (pushnew subform (analysis-local-variable-uses analysis) :test #'equal))
-           (t
-            (pushnew subform (analysis-variable-uses analysis) :test #'equal))))
+(defgeneric write-analysis (analysis filename &key))
 
-                                        ; Optional: do user-defined hooks if needed:
-       (walk-analysis-hook subform args analysis)))))
-
-(defun extract-calls-and-variables (form env-bindings lexical-defs)
-  "Walk FORM with ENV-BINDINGS for scoping, record LEXICAL-DEFS for output."
-  (let ((analysis (make-instance 'analysis)))
-    ;; Save explicit lexical definitions for reporting
-    (when lexical-defs
-      (setf (analysis-lexical-definitions analysis) (copy-list lexical-defs)))
-    ;; Walk with env bindings for scoping only
-    (walk-form form env-bindings analysis)
-    ;; Return facts
-    (values (analysis-fn-calls analysis)
-            (analysis-macro-calls analysis)
-            (analysis-variable-uses analysis)
-            (analysis-lexical-definitions analysis)
-            (analysis-dynamic-definitions analysis))))
-
-(defclass defun-analysis (analysis) ())
-(defclass defclass-analysis (analysis)
-  ((slots :accessor analysis-slots :initform nil)
-   (superclasses :accessor analysis-superclasses :initform nil)))
-(defclass defparameter-analysis (analysis) ())
-(defclass defmacro-analysis (analysis) ())
-
-(defclass code-form ()
-  ((name :accessor form-name :initarg :name)
-   (kind :accessor form-kind :initarg :kind)
-   (form :accessor form-form :initarg :form)
-   (analysis :accessor form-analysis :initarg :analysis)))
-
-(defclass code-file ()
-  ((path :accessor file-path :initarg :path)
-   (forms :accessor file-forms :initform nil)))
-
-(defclass code-project ()
-  ((name :accessor project-name :initarg :name)
-   (files :accessor project-files :initform nil)))
-
-(defgeneric merge-analysis (a b))
-
-(defmethod merge-analysis ((a defun-analysis) (b defun-analysis))
-  (setf (analysis-fn-calls a)
-        (union (analysis-fn-calls a)
-               (analysis-fn-calls b)
-               :test #'equal))
-  (setf (analysis-macro-calls a)
-        (union (analysis-macro-calls a)
-               (analysis-macro-calls b)
-               :test #'equal))
-  (setf (analysis-variable-uses a)
-        (union (analysis-variable-uses a)
-               (analysis-variable-uses b)
-               :test #'equal))
-  (setf (analysis-lexical-definitions a)
-        (union (analysis-lexical-definitions a)
-               (analysis-lexical-definitions b)
-               :test #'equal))
-  (setf (analysis-dynamic-definitions a)
-        (union (analysis-dynamic-definitions a)
-               (analysis-dynamic-definitions b)
-               :test #'equal))
-  (setf (analysis-docstring a)
-        (or (analysis-docstring a)
-            (analysis-docstring b)))
-  a)
-
-(defmethod merge-analysis ((a defclass-analysis) (b defclass-analysis))
-  (call-next-method)
-  (setf (analysis-slots a)
-        (append (analysis-slots a) (analysis-slots b)))
-  (setf (analysis-superclasses a)
-        (union (analysis-superclasses a)
-               (analysis-superclasses b) :test #'equal))
-  a)
-
-(defmethod merge-analysis ((a defparameter-analysis) (b defparameter-analysis))
-  (call-next-method)
-  a)
-
-(defmethod merge-analysis ((a defmacro-analysis) (b defmacro-analysis))
-  (call-next-method)
-  a)
-
-(defmacro with-analysis ((var type) &body body)
-  `(let ((,var (make-instance ',type)))
-     ,@body
-     ,var))
-
-(defgeneric write-analysis (analysis filename name kind definition code &key line start end package))
-
-(defmethod write-analysis ((a analysis) filename name kind definition code &key line start end package)
-  `(,@`(:name ,(or (getf (slot-value a 'name) :name) name)
-
-              :package ,(if (packagep package)
-                            (package-name package)
-                            package)
-              :filename ,filename
-              :kind ,kind
-              :definition ,definition
-              :line ,line
-              :start ,start
-              :end ,end
-              ;; 📌 Prefer raw-body if set, fallback to plain code
-              :code ,(format nil "~S"
-                             (normalize-reader-macros
-                              (or (ignore-errors (slot-value a 'raw-body)) code)))
-              :function-calls ,(mapcar #'export-symbol (analysis-fn-calls a))
-              :macro-calls ,(mapcar #'export-symbol (analysis-macro-calls a))
-              :variable-uses ,(mapcar #'export-symbol (analysis-variable-uses a))
-              :lexical-definitions ,(mapcar #'export-symbol (analysis-lexical-definitions a))
-              :dynamic-definitions ,(mapcar #'export-symbol (analysis-dynamic-definitions a)))
+;;TODO: Need to do specializations per analysis class type at the
+;;moment we have stuff that are in an analysis that is not valid for
+;;all analysis.
+(defmethod write-analysis ((a analysis) filename  &key)
+  `(,@`(:name , (analysis-name a)
+        :package ,(if (packagep (analysis-package a))
+                      (package-name (analysis-package a))
+                      (analysis-package a))
+        :filename ,filename
+        :kind ,(analysis-kind a)
+        :line ,(analysis-line a)
+        :start ,(analysis-start a)
+        :end ,(analysis-end a)
+        ;;TODO: Some time or another we need to figure out how to get
+        ;;the raw code using start and end so that we dont use the
+        ;;read in code! That would make it more usefull when giving it to an AI because then the AI
+        :code ,(format nil "~S"
+                       (normalize-reader-macros
+                        (concrete-syntax-tree:raw
+                         (analysis-cst a))))
+        :function-calls ,(mapcar #'export-symbol (analysis-function-calls a))
+        :macro-calls ,(mapcar #'export-symbol (analysis-macro-calls a))
+        :variable-uses ,(mapcar #'export-symbol (analysis-variable-uses a))
+        :lexical-definitions ,(mapcar #'export-symbol (analysis-lexical-definitions a))
+        :dynamic-definitions ,(mapcar #'export-symbol (analysis-dynamic-definitions a)))
        ;; ✅ :parameters if any
        ,@(when (analysis-parameters a)
            `(:parameters ,(analysis-parameters a)))
        ;; ✅ :docstring if any
        ,@(when (analysis-docstring a)
            `(:docstring ,(analysis-docstring a)))
+       #|
        ;; ✅ defpackage-specific slots if any
        ,@(when (typep a 'defpackage-analysis)
-           (append
-            (when (analysis-nicknames a)
-              `(:nicknames ,(analysis-nicknames a)))
-            (when (analysis-uses a)
-              `(:uses ,(analysis-uses a)))
-            (when (analysis-exports a)
-              `(:exports ,(analysis-exports a)))
-            (when (analysis-shadows a)
-              `(:shadows ,(analysis-shadows a)))
-            (when (analysis-shadowing-imports a)
-              `(:shadowing-imports ,(analysis-shadowing-imports a)))
-            (when (analysis-imports a)
-              `(:imports ,(analysis-imports a)))
-            (when (analysis-interns a)
-              `(:interns ,(analysis-interns a)))
-            (when (analysis-other-options a)
-              `(:other-options ,(analysis-other-options a)))))))
+       (append
+       (when (analysis-nicknames a)
+       `(:nicknames ,(analysis-nicknames a)))
+       (when (analysis-uses a)
+       `(:uses ,(analysis-uses a)))
+       (when (analysis-exports a)
+       `(:exports ,(analysis-exports a)))
+       (when (analysis-shadows a)
+       `(:shadows ,(analysis-shadows a)))
+       (when (analysis-shadowing-imports a)
+       `(:shadowing-imports ,(analysis-shadowing-imports a)))
+       (when (analysis-imports a)
+       `(:imports ,(analysis-imports a)))
+       (when (analysis-interns a)
+       `(:interns ,(analysis-interns a)))
+       (when (analysis-other-options a)
+       `(:other-options ,(analysis-other-options a)))))
+       |#))
 
-(defun parse-lambda-list+metadata (lambda-list)
-  "Parse LAMBDA-LIST into:
-   (values symbols param-metadata)
-
-   param-metadata preserves :name, :default, :specializer, :role etc."
-  (let ((mode :required)
-        (result '())
-        (bound-vars '()))
-    (labels ((record-param (var &key default specializer)
-               (let ((sym-info (export-symbol var))
-                     (entry '()))
-                 (setf entry sym-info)
-                 (when default
-                   (setf entry (append entry `(:default ,default))))
-                 (when specializer
-                   (let ((spec-info
-                           (if (and (consp specializer) (eq (car specializer) 'eql))
-                               ;; EQL specializer: record operator and value
-                               `(:name "EQL" :package "common-lisp"
-                                 :value ,(second specializer))
-                               ;; normal type
-                               (export-symbol specializer))))
-                     (setf entry (append entry `(:specializer ,spec-info)))))
-                 (push entry result)
-                 (push var bound-vars))))
-      (loop for item in lambda-list do
-            (cond
-              ;; Mode switches:
-              ((member item '(&optional &key &rest &body &aux &whole))
-               (setf mode item))
-
-              ;; &whole: consume the next symbol ONLY
-              ((eq mode '&whole)
-               (record-param item)
-               ;; after &whole, back to normal
-               (setf mode :required))
-
-              ;; &rest / &body: bind exactly one param
-              ((or (eq mode '&rest) (eq mode '&body))
-               (record-param item)
-               (setf mode :done))
-
-              ;; &aux: bindings are (var [initform])
-              ((eq mode '&aux)
-               (etypecase item
-                 (symbol (record-param item))
-                 (list (record-param (first item)
-                                     :default (second item)))))
-
-              ;; &optional / &key: (var [default])
-              ((or (eq mode '&optional) (eq mode '&key))
-               (etypecase item
-                 (symbol (record-param item))
-                 (list (record-param (first item)
-                                     :default (second item)))))
-
-              ;; default: either plain symbol or (var type)
-              (t
-               (etypecase item
-                 (symbol (record-param item))
-                 (list (record-param (first item)
-                                     :specializer (second item)))))))
-      (values (nreverse bound-vars)
-              (nreverse result)))))
-
-(defun serialize-slot (slot)
-  (let ((copy (copy-list slot)))
-    (let* ((initform (getf copy :initform))
-           (kind nil)
-           (raw nil)
-           (analyzed nil))
-
-      (cond
-        ((and (consp initform) (eq (car initform) 'quote))
-         (setf kind :quoted-symbol
-               raw (format nil "~S" initform)
-               initform (cadr initform)))
-
-        ((and (consp initform) (eq (car initform) 'function))
-         (setf kind :function
-               raw (format nil "~S" initform)
-               initform (export-symbol (cadr initform))))
-
-        ((and (consp initform) (eq (car initform) 'lambda))
-         (setf kind :lambda
-               raw (format nil "~S" initform))
-         (multiple-value-bind (fn macro vars)
-             ;; NEW: updated API: env = nil, defs = nil
-             (extract-calls-and-variables initform nil nil)
-           (setf analyzed `((:function-calls ,(mapcar #'export-symbol fn))
-                            (:macro-calls ,(mapcar #'export-symbol macro))
-                            (:variable-uses ,(mapcar #'export-symbol vars))))))
-
-        ((symbolp initform)
-         (setf kind :symbol
-               raw (format nil "~S" initform)
-               initform (export-symbol initform)))
-
-        ((or (numberp initform) (stringp initform) (keywordp initform))
-         (setf kind :literal
-               raw (format nil "~S" initform)))
-
-        ((listp initform)
-         ;; Treat general form like (1+ 42)
-         (setf kind :computed-form
-               raw (format nil "~S" initform))
-         (multiple-value-bind (fn macro vars)
-             ;; NEW: updated API: env = nil, defs = nil
-             (extract-calls-and-variables initform nil nil)
-           (setf analyzed `((:function-calls ,(mapcar #'export-symbol fn))
-                            (:macro-calls ,(mapcar #'export-symbol macro))
-                            (:variable-uses ,(mapcar #'export-symbol vars))))))
-
-        ((functionp initform)
-         (multiple-value-bind (expr name) (function-lambda-expression initform)
-           (cond
-             (name
-              (setf kind :function
-                    raw (format nil "~S" initform)
-                    initform (export-symbol name)))
-             (expr
-              (setf kind :lambda
-                    raw (format nil "~S" expr))
-              (multiple-value-bind (fn macro vars)
-                  ;; NEW: updated API: env = nil, defs = nil
-                  (extract-calls-and-variables expr nil nil)
-                (setf analyzed `((:function-calls ,(mapcar #'export-symbol fn))
-                                 (:macro-calls ,(mapcar #'export-symbol macro))
-                                 (:variable-uses ,(mapcar #'export-symbol vars)))))))
-           (unless kind
-             (setf kind :function
-                   raw (format nil "~S" initform)))))
-
-        (t
-         (setf kind :unknown
-               raw (format nil "~S" initform))))
-
-      ;; Replace initform slot with a rich object
-      (setf (getf copy :initform)
-            `(:kind ,kind :raw ,raw :value ,initform :analyzed ,analyzed)))
-    copy))
-
-(defmethod write-analysis ((a defclass-analysis) filename name kind definition code
-                           &key line start end package)
-  (declare (ignorable line start end))
-  `(,@(call-next-method a filename name kind definition code :line line
-                                                             :start start
-                                                             :end end
-                                                             :package package)
-    :superclasses ,(mapcar #'export-symbol (analysis-superclasses a))
-    :slots ,(mapcar #'serialize-slot (analysis-slots a))))
-
-(defun fallback-form-analyzer (form &key file metadata project)
-  (declare (ignore file metadata project))
-  (with-analysis (analysis defun-analysis)
-    ;; If the form looks like (foo ...) then foo is the "name"
-    (when (and (consp form)
-               (symbolp (first form)))
-      (setf (analysis-name analysis)
-            (export-symbol (first form))))
-    ;; Extract calls as usual:
-    (multiple-value-bind (fn macro var lex dyn)
-        (extract-calls-and-variables form nil nil)
-      (setf (analysis-fn-calls analysis) fn
-            (analysis-macro-calls analysis) macro
-            (analysis-variable-uses analysis) var
-            (analysis-lexical-definitions analysis) lex
-            (analysis-dynamic-definitions analysis) dyn))
-    analysis))
-
-(defun analyze-form-dispatch (form file metadata project)
-  (let* ((type (car form))
-         (analyzer (gethash type *form-analyzers*)))
-
-    (if analyzer
-        (funcall analyzer form :file file :metadata metadata :project project)
-        ;; fallback attempt
-        (fallback-form-analyzer form :file file :metadata metadata :project project))))
-
-(defun analyze-file (file-path &optional (project nil))
-  (let ((forms-with-meta (parse-file-with-eclector file-path))
-        (code-file (make-instance 'code-file :path file-path)))
-    (dolist (entry forms-with-meta)
-      (let* ((form (getf entry :form))
-             (start (getf entry :start))
-             (end (getf entry :end))
-             (line (getf entry :line))
-             (package (getf entry :package))
-             (form-name (safe-normalize-name form))
-             (raw-kind (car form))
-             (name-part (string-downcase (symbol-name raw-kind)))
-             (package-part (string-downcase (package-name (symbol-package raw-kind))))
-             (setf-method-p (and (eq raw-kind 'defmethod)
-                                 (consp (second form))
-                                 (eq (car (second form)) 'setf)))
-             (kind `(:name ,name-part :package ,package-part ,@(when setf-method-p '(:setf t))))
-             (definition-tag (form-is-definition-p form))
-             (metadata `(:start ,start :end ,end :line ,line :source-path ,file-path
-                         :definition ,definition-tag))
-             (analysis (analyze-form-dispatch form file-path metadata project)))
-
-        (when analysis
-          (push (make-instance 'code-form
-                               :name (or form-name (format nil "anonymous-form-~A" line))
-                               :kind kind
-                               :form (list :form form
-                                           :start start
-                                           :end end
-                                           :line line
-                                           :package package)
-                               :analysis analysis)
-                (file-forms code-file)))))
-    code-file))
+#|
+(defmethod write-analysis ((a defclass-analysis) filename &key)
+`(,@(call-next-method a filename)
+:superclasses ,(mapcar #'export-symbol (analysis-superclasses a))
+:slots ,(mapcar #'serialize-slot (analysis-slots a))))
+|#
 
 (defun analyze-project (file-paths &key (name "default-project"))
   (let ((project (make-instance 'code-project :name name)))
@@ -577,30 +274,15 @@
     (dolist (file (project-files project))
 
       (let* ((filename (namestring (file-path file)))
-             (unsorted-forms (file-forms file))
-             (forms (sort unsorted-forms #'<
-                          :key (lambda (f)
-                                 (getf (form-form f) :start)))))
-        (dolist (form forms)
-          (let* ((analysis (form-analysis form))
-                 (meta (form-form form))
-                 (start (getf meta :start))
-                 (end (getf meta :end))
-                 (line (getf meta :line))
-                 (definition (getf meta :definition))
-                 (package (getf meta :package)))
-            (cl-naive-store:persist-document
-             collection
-             (write-analysis analysis
-                             filename
-                             (form-name form)
-                             (form-kind form)
-                             definition
-                             (getf meta :form)
-                             :line line
-                             :start start
-                             :end end
-                             :package package))))))))
+             (unsorted-analyses (file-analyses file))
+             (analyses (sort unsorted-analyses #'<
+                             :key (lambda (a)
+                                    (analysis-start a)))))
+        (dolist (analysis analyses)
+          (cl-naive-store:persist-document
+           collection
+           (write-analysis analysis
+                           filename)))))))
 
 (defun index-project-definitions (system-name source-dir &optional file)
   "Analyze and store project definitions using cl-naive-store."

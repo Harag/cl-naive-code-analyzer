@@ -1,6 +1,8 @@
 (in-package :test)
 ;;;; Some code to test with
 
+(defparameter *esh* nil)
+
 ;; A global variable
 (defparameter *global-var* 42
   "A global variable used elsewhere.")

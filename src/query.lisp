@@ -2,13 +2,56 @@
 
 (defparameter *registered-queries* (make-hash-table :test #'equal))
 
+(defun init-project (project)
+  (let ((store)
+        (collection))
+    (unless *multiverse*
+      (setf *multiverse*
+            (make-instance
+             'multiverse
+             :name "code-index-multiverse"
+             :location "~/code-index-multiverse/"
+             :universe-class 'cl-naive-store:universe)))
+    (unless *universe*
+      (setf *universe* (add-multiverse-element
+                        *multiverse*
+                        (make-instance
+                         'cl-naive-store:universe
+                         :name "code-index-universe"
+                         :multiverse *multiverse*
+                         :location "~/code-index-multiverse/code-index-universe/"))))
+
+    (setf store (cl-naive-store:get-multiverse-element
+                 :store *universe* project))
+    (unless store
+      (setf store (cl-naive-store:load-from-definition-file
+                   *universe*
+                   :store
+                   project)))
+
+    (setf collection (cl-naive-store:get-multiverse-element
+                      :collection store "code-definitions"))
+    (unless collection
+      (setf collection (cl-naive-store:load-from-definition-file
+                        store
+                        :collection
+                        "code-definitions"
+                        :with-data-p t)))
+
+    collection))
+
 (defmacro defquery (name lambda)
   `(setf (gethash ,name *registered-queries*) ,lambda))
 
 (defun get-project-stores (&optional projects)
   (if projects
       (loop for project in projects
-            collect (cl-naive-store:get-multiverse-element :store *universe* project))
+            collect
+            (let ((store (cl-naive-store:get-multiverse-element
+                          :store *universe* project)))
+              (if store
+                  store
+                  (init-project project))))
       (cl-naive-store:stores *universe*)))
 
 (defun query-analyzer (query &key projects sort filter limit)
@@ -22,6 +65,7 @@ query), or a lambda.
 SORT is a key function.
 
 LIMIT reduces the result length."
+
   (let* ((stores (get-project-stores projects))
          (final-query (cond ((functionp query) query)
                             ((keywordp query)
@@ -82,7 +126,6 @@ LIMIT reduces the result length."
 
 (defquery :all-functions
     (lambda (definition)
-
       (member (getf (getf definition :kind) :name)
               '("defun" "defmethod" "lambda" "setf-macrolet")
               :test #'equalp)))
@@ -95,7 +138,6 @@ LIMIT reduces the result length."
 
 (defun uncalled-functions (&optional projects)
   (let ((functions (query-analyzer :all-functions :projects projects)))
-
     (loop for function in functions
           unless (query-analyzer
                   (lambda (definition)
@@ -104,4 +146,25 @@ LIMIT reduces the result length."
                   :projects projects)
           collect function)))
 
-;;(uncalled-functions)
+;;(uncalled-functions '("test-code"))
+
+;;(uncalled-functions '("insite"))
+
+;;(query-analyzer :all-functions :projects '("test-code"))
+
+;;(init-project "test-code")
+;;(break "~S" *universe*)
+#|
+(with-open-file (s "~/Downloads/test-output.lisp"
+:direction :output :if-exists :supersede)
+(let ((foo "foo")
+(writer (make-instance 'naive-impl::safe-writer))
+(hash (make-hash-table :size 2)))
+(naive-impl::safe-write
+(list :name foo
+:info "abc def"
+:vector #(a b c)
+:hash hash
+:type-of (type-of writer))
+writer s)))
+|#

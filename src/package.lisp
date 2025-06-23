@@ -1,6 +1,6 @@
 (in-package :common-lisp-user)
 
-(defpackage :portable-sb-walker
+(defpackage :analyzer-walker
   (:use :cl)
   (:export :walk-form))
 
