@@ -3,7 +3,7 @@
 #+AUTHOR: Phil Marneweck
 #+EMAIL: haragx@gmail.com
 #+DATE: Mon Mar 03 07:00:00 CEST 2025
-#+TITLE: cl-naive-code-index Documentation
+#+TITLE: cl-naive-code-analyzer Documentation
 
 #+BEGIN_EXPORT latex
 \clearpage
