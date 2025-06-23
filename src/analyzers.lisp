@@ -6,6 +6,7 @@
 
 (defclass define-condition-analysis (analysis) ())
 
+
 (defclass defclass-analysis (analysis)
   ((slots :accessor analysis-slots :initform nil)
    (superclasses :accessor analysis-superclasses :initform nil)))
@@ -14,9 +15,6 @@
 
 (defclass defmacro-analysis (analysis) ())
 
-(defclass defclass-analysis (analysis)
-  ((superclasses :accessor analysis-superclasses :initform nil)
-   (slots :accessor analysis-slots :initform nil)))
 
 (defclass deftype-analysis (analysis) ())
 
