@@ -206,6 +206,11 @@ result)
        `(:other-options ,(analysis-other-options a)))))
        |#))
 
+(defmethod write-analysis ((a defun-analysis) filename &key)
+  `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a)
+        `(:lambda-info ,(analysis-lambda-info a)))))
+
 #|
 (defmethod write-analysis ((a defclass-analysis) filename &key)
 `(,@(call-next-method a filename)

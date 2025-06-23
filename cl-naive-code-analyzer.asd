@@ -3,7 +3,7 @@
   :version "2025.3.3"
   :author ""
   :licence "MIT"
-  :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store)
+  :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store alexandria)
   :components ((:file "src/package")
                (:file "src/utils"
                 :depends-on ("src/package"))

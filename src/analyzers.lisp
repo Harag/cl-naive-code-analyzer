@@ -1,6 +1,7 @@
 (in-package :cl-naive-code-analyzer)
 
-(defclass defun-analysis (analysis) ())
+(defclass defun-analysis (analysis)
+  ((lambda-info :accessor analysis-lambda-info :initform nil)))
 
 (defclass defmethod-analysis (analysis) ())
 
@@ -199,36 +200,66 @@ Preserves structure and is iterative with cycle detection."
   analysis)
 
 (defmethod analyze-cst (cst (analysis defun-analysis))
-  (let* ((name-cst (concrete-syntax-tree:second cst))
-         (args-cst (concrete-syntax-tree:third cst))
-         (possible-doc (concrete-syntax-tree:fourth cst))
-         (doc (and (concrete-syntax-tree:atom possible-doc)
-                   (stringp (concrete-syntax-tree:raw possible-doc))
-                   (concrete-syntax-tree:raw
-                    possible-doc)))
-         (body-cst (if doc
-                       ;;Everything after the doc
-                       (concrete-syntax-tree:nthrest 3 cst)
-                       ;;No doc so all body
-                       (concrete-syntax-tree:nth 3 cst)))
-         (name (concrete-syntax-tree:raw name-cst))
-         (params
-
-           (when (concrete-syntax-tree:consp args-cst)
-             (mapcar #'concrete-syntax-tree:raw
-                     (cst:listify args-cst)))))
-    (setf (analysis-name analysis) name
-          (analysis-kind analysis) :defun
-          (analysis-parameters analysis) params
+  (let* ((name-cst      (concrete-syntax-tree:second cst))
+         (args-cst      (concrete-syntax-tree:third cst))
+         (possible-doc  (concrete-syntax-tree:fourth cst))
+         (doc           (when (and (concrete-syntax-tree:atom possible-doc)
+                                   (stringp (concrete-syntax-tree:raw possible-doc)))
+                          (concrete-syntax-tree:raw possible-doc)))
+         (body-cst      (if doc
+                            (concrete-syntax-tree:nthrest 3 cst)
+                            (concrete-syntax-tree:nth 3 cst)))
+         (name          (concrete-syntax-tree:raw name-cst))
+         ;; Parse the lambda list using Alexandria
+         (lambda-list   (and (concrete-syntax-tree:consp args-cst)
+                             (mapcar #'concrete-syntax-tree:raw
+                                     (cst:listify args-cst))))
+         (parsed        (when lambda-list
+                          (alexandria:parse-ordinary-lambda-list
+                           lambda-list
+                           :normalize t
+                           :allow-specializers t
+                           :normalize-optional t
+                           :normalize-keyword t
+                           :normalize-auxilary t)))
+         ;; Destructure parsed components
+         (required      (first parsed))
+         (optionals     (second parsed)) ; list of (name init suppliedp)
+         (rest-name     (third parsed))
+         (keywords      (fourth parsed)) ; list of ((keyword name) init suppliedp)
+         (allow-other-p (fifth parsed))
+         (auxes         (sixth parsed))) ; list of (name init)
+    ;; Populate analysis slots
+    (setf (analysis-name analysis)      name
+          (analysis-kind analysis)      :defun
           (analysis-docstring analysis) doc
-          (analysis-raw-body analysis) body-cst)
-
-    (dolist (p params)
+          (analysis-raw-body analysis)  body-cst
+          (analysis-parameters analysis)
+          (append required
+                  (mapcar #'car optionals)
+                  (when rest-name (list rest-name))
+                  (mapcar (lambda (x) (cadr x)) keywords)
+                  (mapcar #'car auxes)))
+    ;; For detailed parameter meta, you could store elsewhere, e.g.:
+    (setf (analysis-lambda-info analysis)
+          (list :required required
+                :optionals optionals
+                :rest rest-name
+                :keywords keywords
+                :allow-other-keys allow-other-p
+                :auxes auxes))
+    ;; Lexical defs for each symbol parameter
+    (dolist (p (append required
+                       (mapcar #'car optionals)
+                       (when rest-name (list rest-name))
+                       (mapcar (lambda (x) (cadr x)) keywords)
+                       (mapcar #'car auxes)))
       (pushnew p (analysis-lexical-definitions analysis)))
 
+    ;; Walk the body for calls, uses, assignments, etc.
     (when body-cst
       (walk-cst-with-context
-       cst
+       body-cst
        (lambda (cst path tail)
          (declare (ignore path tail))
          (gather-info cst analysis))))
