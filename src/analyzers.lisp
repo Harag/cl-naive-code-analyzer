@@ -279,6 +279,331 @@ Preserves structure and is iterative with cycle detection."
          (gather-info cst analysis))))
     analysis))
 
+;;; ---------------------------------------------------------------------------
+;;; Additional analyzers
+
+(defun %parse-lambda-info (args-cst)
+  (let* ((lambda-list (and (concrete-syntax-tree:consp args-cst)
+                           (mapcar #'concrete-syntax-tree:raw
+                                   (cst:listify args-cst))))
+         (parsed (when lambda-list
+                   (alexandria:parse-ordinary-lambda-list
+                    lambda-list
+                    :normalize t
+                    :allow-specializers t
+                    :normalize-optional t
+                    :normalize-keyword t
+                    :normalize-auxilary t)))
+         (required      (first parsed))
+         (optionals     (second parsed))
+         (rest-name     (third parsed))
+         (keywords      (fourth parsed))
+         (allow-other-p (fifth parsed))
+         (auxes         (sixth parsed)))
+    (values required optionals rest-name keywords allow-other-p auxes)))
+
+(defun %parameter-list-from-lambda-info (required optionals rest-name keywords auxes)
+  (append required
+          (mapcar #'car optionals)
+          (when rest-name (list rest-name))
+          (mapcar (lambda (x) (cadr x)) keywords)
+          (mapcar #'car auxes)))
+
+(defmethod analyze-cst (cst (analysis defmacro-analysis))
+  (let* ((name-cst      (concrete-syntax-tree:second cst))
+         (args-cst      (concrete-syntax-tree:third cst))
+         (possible-doc  (concrete-syntax-tree:fourth cst))
+         (doc           (when (and (concrete-syntax-tree:atom possible-doc)
+                                   (stringp (concrete-syntax-tree:raw possible-doc)))
+                          (concrete-syntax-tree:raw possible-doc)))
+         (body-cst      (if doc
+                            (concrete-syntax-tree:nthrest 3 cst)
+                            (concrete-syntax-tree:nth 3 cst)))
+         (name          (concrete-syntax-tree:raw name-cst)))
+    (multiple-value-bind (required optionals rest-name keywords allow-other-p auxes)
+        (%parse-lambda-info args-cst)
+      (setf (analysis-name analysis) name
+            (analysis-kind analysis) :defmacro
+            (analysis-docstring analysis) doc
+            (analysis-raw-body analysis) body-cst
+            (analysis-parameters analysis)
+            (%parameter-list-from-lambda-info required optionals rest-name keywords auxes))
+      (dolist (p (analysis-parameters analysis))
+        (pushnew p (analysis-lexical-definitions analysis)))
+      (when body-cst
+        (walk-cst-with-context
+         body-cst
+         (lambda (cst path tail)
+           (declare (ignore path tail))
+           (gather-info cst analysis))))
+      analysis))
+
+(defmethod analyze-cst (cst (analysis defmethod-analysis))
+  (let* ((tail (concrete-syntax-tree:rest cst))
+         (qualifiers '()))
+    ;; skip method qualifiers
+    (loop while (and (concrete-syntax-tree:consp tail)
+                     (concrete-syntax-tree:atom (concrete-syntax-tree:first tail))
+                     (keywordp (concrete-syntax-tree:raw (concrete-syntax-tree:first tail))))
+          do (progn
+               (push (concrete-syntax-tree:raw (concrete-syntax-tree:first tail)) qualifiers)
+               (setf tail (concrete-syntax-tree:rest tail))))
+    (let* ((name-cst (concrete-syntax-tree:first tail))
+           (tail     (concrete-syntax-tree:rest tail))
+           (args-cst (concrete-syntax-tree:first tail))
+           (tail     (concrete-syntax-tree:rest tail))
+           (possible-doc (and (concrete-syntax-tree:consp tail)
+                              (concrete-syntax-tree:first tail)))
+           (doc  (when (and possible-doc
+                            (concrete-syntax-tree:atom possible-doc)
+                            (stringp (concrete-syntax-tree:raw possible-doc)))
+                   (concrete-syntax-tree:raw possible-doc)))
+           (body-cst (if doc
+                         (concrete-syntax-tree:rest tail)
+                         tail))
+           (name (real-raw name-cst)))
+      (multiple-value-bind (required optionals rest-name keywords allow-other-p auxes)
+          (%parse-lambda-info args-cst)
+        (setf (analysis-name analysis) name
+              (analysis-kind analysis) :defmethod
+              (analysis-docstring analysis) doc
+              (analysis-raw-body analysis) body-cst
+              (analysis-parameters analysis)
+              (%parameter-list-from-lambda-info required optionals rest-name keywords auxes))
+        (dolist (p (analysis-parameters analysis))
+          (pushnew p (analysis-lexical-definitions analysis)))
+        (when body-cst
+          (walk-cst-with-context
+           body-cst
+           (lambda (cst path tail)
+             (declare (ignore path tail))
+             (gather-info cst analysis))))
+        analysis)))
+
+(defmethod analyze-cst (cst (analysis defgeneric-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (args-cst (concrete-syntax-tree:third cst))
+         (options-cst (concrete-syntax-tree:nthrest 3 cst))
+         (name (concrete-syntax-tree:raw name-cst))
+         (doc nil))
+    ;; look for (:documentation "...")
+    (when (concrete-syntax-tree:consp options-cst)
+      (dolist (opt (cst:listify options-cst))
+        (when (and (concrete-syntax-tree:consp opt)
+                   (eq (real-raw (concrete-syntax-tree:first opt)) :documentation))
+          (let ((d (concrete-syntax-tree:second opt)))
+            (when (and d (concrete-syntax-tree:atom d)
+                       (stringp (concrete-syntax-tree:raw d)))
+              (setf doc (concrete-syntax-tree:raw d))))))
+    (multiple-value-bind (required optionals rest-name keywords allow-other-p auxes)
+        (%parse-lambda-info args-cst)
+      (setf (analysis-name analysis) name
+            (analysis-kind analysis) :defgeneric
+            (analysis-docstring analysis) doc
+            (analysis-raw-body analysis) options-cst
+            (analysis-parameters analysis)
+            (%parameter-list-from-lambda-info required optionals rest-name keywords auxes))
+      (dolist (p (analysis-parameters analysis))
+        (pushnew p (analysis-lexical-definitions analysis)))
+      (when options-cst
+        (walk-cst-with-context
+         options-cst
+         (lambda (cst path tail)
+           (declare (ignore path tail))
+           (gather-info cst analysis))))
+      analysis))
+
+(defmethod analyze-cst (cst (analysis deftype-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (args-cst (concrete-syntax-tree:third cst))
+         (possible-doc (concrete-syntax-tree:fourth cst))
+         (doc (when (and (concrete-syntax-tree:atom possible-doc)
+                         (stringp (concrete-syntax-tree:raw possible-doc)))
+                (concrete-syntax-tree:raw possible-doc)))
+         (body-cst (if doc
+                       (concrete-syntax-tree:nthrest 3 cst)
+                       (concrete-syntax-tree:nth 3 cst)))
+         (name (concrete-syntax-tree:raw name-cst)))
+    (multiple-value-bind (required optionals rest-name keywords allow-other-p auxes)
+        (%parse-lambda-info args-cst)
+      (setf (analysis-name analysis) name
+            (analysis-kind analysis) :deftype
+            (analysis-docstring analysis) doc
+            (analysis-raw-body analysis) body-cst
+            (analysis-parameters analysis)
+            (%parameter-list-from-lambda-info required optionals rest-name keywords auxes))
+      (dolist (p (analysis-parameters analysis))
+        (pushnew p (analysis-lexical-definitions analysis)))
+      (when body-cst
+        (walk-cst-with-context
+         body-cst
+         (lambda (cst path tail)
+           (declare (ignore path tail))
+           (gather-info cst analysis))))
+      analysis))
+
+(defmethod analyze-cst (cst (analysis defsetf-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (tail (concrete-syntax-tree:nthrest 2 cst))
+         (doc nil))
+    ;; simple docstring detection
+    (when (and (concrete-syntax-tree:consp tail)
+               (concrete-syntax-tree:atom (concrete-syntax-tree:last tail))
+               (stringp (concrete-syntax-tree:raw (concrete-syntax-tree:last tail))))
+      (setf doc (concrete-syntax-tree:raw (concrete-syntax-tree:last tail))))
+    (setf (analysis-name analysis) (real-raw name-cst)
+          (analysis-kind analysis) :defsetf
+          (analysis-docstring analysis) doc
+          (analysis-raw-body analysis) tail)
+    (call-next-method)))
+
+(defmethod analyze-cst (cst (analysis defparameter-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (init-cst (concrete-syntax-tree:third cst))
+         (possible-doc (concrete-syntax-tree:fourth cst))
+         (doc (when (and (concrete-syntax-tree:atom possible-doc)
+                         (stringp (concrete-syntax-tree:raw possible-doc)))
+                (concrete-syntax-tree:raw possible-doc)))
+         (name (concrete-syntax-tree:raw name-cst)))
+    (setf (analysis-name analysis) name
+          (analysis-kind analysis) :defparameter
+          (analysis-docstring analysis) doc
+          (analysis-raw-body analysis) init-cst)
+    (when init-cst
+      (walk-cst-with-context
+       init-cst
+       (lambda (cst path tail)
+         (declare (ignore path tail))
+         (gather-info cst analysis))))
+    analysis))
+
+(defmethod analyze-cst (cst (analysis defclass-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (supers-cst (concrete-syntax-tree:third cst))
+         (slots-cst (concrete-syntax-tree:fourth cst))
+         (options-cst (concrete-syntax-tree:nthrest 4 cst))
+         (doc nil))
+    (when (concrete-syntax-tree:consp options-cst)
+      (dolist (opt (cst:listify options-cst))
+        (when (and (concrete-syntax-tree:consp opt)
+                   (eq (real-raw (concrete-syntax-tree:first opt)) :documentation))
+          (let ((d (concrete-syntax-tree:second opt)))
+            (when (and d (concrete-syntax-tree:atom d)
+                       (stringp (concrete-syntax-tree:raw d)))
+              (setf doc (concrete-syntax-tree:raw d))))))
+    (setf (analysis-name analysis) (concrete-syntax-tree:raw name-cst)
+          (analysis-kind analysis) :defclass
+          (analysis-superclasses analysis)
+          (when (concrete-syntax-tree:consp supers-cst)
+            (mapcar #'concrete-syntax-tree:raw (cst:listify supers-cst)))
+          (analysis-slots analysis)
+          (when (concrete-syntax-tree:consp slots-cst)
+            (mapcar (lambda (s) (mapcar #'concrete-syntax-tree:raw (cst:listify s)))
+                    (cst:listify slots-cst)))
+          (analysis-docstring analysis) doc
+          (analysis-raw-body analysis) slots-cst)
+    (call-next-method))
+
+(defmethod analyze-cst (cst (analysis defstruct-analysis))
+  (let* ((name-options (concrete-syntax-tree:second cst))
+         (name-cst (if (concrete-syntax-tree:consp name-options)
+                       (concrete-syntax-tree:first name-options)
+                       name-options))
+         (slots-cst (if (concrete-syntax-tree:consp name-options)
+                        (concrete-syntax-tree:nthrest 2 cst)
+                        (concrete-syntax-tree:nthrest 2 cst)))
+         (doc nil))
+    (setf (analysis-name analysis) (concrete-syntax-tree:raw name-cst)
+          (analysis-kind analysis) :defstruct
+          (analysis-docstring analysis) doc
+          (analysis-slots analysis)
+          (when (concrete-syntax-tree:consp slots-cst)
+            (mapcar (lambda (s) (mapcar #'concrete-syntax-tree:raw (cst:listify s)))
+                    (cst:listify slots-cst)))
+          (analysis-raw-body analysis) slots-cst)
+    (call-next-method))
+
+(defmethod analyze-cst (cst (analysis define-condition-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (supers-cst (concrete-syntax-tree:third cst))
+         (slots-cst (concrete-syntax-tree:nth 3 cst))
+         (options-cst (concrete-syntax-tree:nthrest 4 cst))
+         (doc nil))
+    (when (concrete-syntax-tree:consp options-cst)
+      (dolist (opt (cst:listify options-cst))
+        (when (and (concrete-syntax-tree:consp opt)
+                   (eq (real-raw (concrete-syntax-tree:first opt)) :documentation))
+          (let ((d (concrete-syntax-tree:second opt)))
+            (when (and d (concrete-syntax-tree:atom d)
+                       (stringp (concrete-syntax-tree:raw d)))
+              (setf doc (concrete-syntax-tree:raw d))))))
+    (setf (analysis-name analysis) (concrete-syntax-tree:raw name-cst)
+          (analysis-kind analysis) :define-condition
+          (analysis-superclasses analysis)
+          (when (concrete-syntax-tree:consp supers-cst)
+            (mapcar #'concrete-syntax-tree:raw (cst:listify supers-cst)))
+          (analysis-slots analysis)
+          (when (concrete-syntax-tree:consp slots-cst)
+            (mapcar (lambda (s) (mapcar #'concrete-syntax-tree:raw (cst:listify s)))
+                    (cst:listify slots-cst)))
+          (analysis-docstring analysis) doc
+          (analysis-raw-body analysis) slots-cst)
+    (call-next-method))
+
+(defmethod analyze-cst (cst (analysis defpackage-analysis))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (options (concrete-syntax-tree:nthrest 2 cst))
+         (name (concrete-syntax-tree:raw name-cst))
+         (doc nil)
+         (nicknames nil)
+         (uses nil)
+         (exports nil)
+         (shadows nil)
+         (shadowing-imports nil)
+         (imports nil)
+         (interns nil)
+         (other nil))
+    (when (concrete-syntax-tree:consp options)
+      (dolist (opt (cst:listify options))
+        (let ((head (real-raw (concrete-syntax-tree:first opt)))
+              (tail (concrete-syntax-tree:rest opt)))
+          (case head
+            (:nicknames (setf nicknames (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:use       (setf uses (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:export    (setf exports (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:shadow    (setf shadows (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:shadowing-import-from (setf shadowing-imports (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:import-from (setf imports (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:intern     (setf interns (mapcar #'concrete-syntax-tree:raw (cst:listify tail))))
+            (:documentation (let ((d (concrete-syntax-tree:first tail)))
+                              (when (and d (concrete-syntax-tree:atom d)
+                                         (stringp (concrete-syntax-tree:raw d)))
+                                (setf doc (concrete-syntax-tree:raw d))))
+            (t (push (mapcar #'concrete-syntax-tree:raw (cst:listify opt)) other))))))
+    (setf (analysis-name analysis) name
+          (analysis-kind analysis) :defpackage
+          (analysis-package-name analysis) name
+          (analysis-nicknames analysis) nicknames
+          (analysis-uses analysis) uses
+          (analysis-exports analysis) exports
+          (analysis-shadows analysis) shadows
+          (analysis-shadowing-imports analysis) shadowing-imports
+          (analysis-imports analysis) imports
+          (analysis-interns analysis) interns
+          (analysis-other-options analysis) other
+          (analysis-docstring analysis) doc
+          (analysis-raw-body analysis) options)
+    analysis)
+
+(defmethod analyze-cst (cst (analysis define-symbol-macro-analysis))
+  (let ((name-cst (concrete-syntax-tree:second cst))
+        (expansion-cst (concrete-syntax-tree:third cst)))
+    (setf (analysis-name analysis) (concrete-syntax-tree:raw name-cst)
+          (analysis-kind analysis) :define-symbol-macro
+          (analysis-raw-body analysis) expansion-cst)
+    (call-next-method)))
+
+
 (defmethod make-analyzer ((type (eql 'defmethod)))
   (make-instance 'defmethod-analysis))
 
