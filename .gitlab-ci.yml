@@ -1,0 +1,19 @@
+image: registry.gitlab.com/harag/sbcl-docker-gitlab-ci
+
+stages:
+  - test
+
+before_script:
+  - cd ~/src
+  - git clone https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.com/Harag/cl-naive-tests.git
+
+test:
+  stage: test
+  script:
+    - make -C $CI_PROJECT_DIR test DEPENDENCYDIR=~/src/  ARTDIR=$CI_PROJECT_DIR/
+
+  artifacts:
+    reports:
+      junit: junit-results.xml
+
+
