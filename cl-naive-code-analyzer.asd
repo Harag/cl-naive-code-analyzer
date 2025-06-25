@@ -1,7 +1,15 @@
+;;; cl-naive-code-analyzer.asd
+;;;
+;;; This file defines the system "cl-naive-code-analyzer".
+;;; It specifies dependencies and components of the system.
+;;;
+;;; TODO: Add a more detailed description for the system.
+;;; TODO: Specify the author of the system.
+
 (defsystem "cl-naive-code-analyzer"
-  :description ""
+  :description "" ; TODO: Add a descriptive comment here.
   :version "2025.3.3"
-  :author ""
+  :author "" ; TODO: Add author information here.
   :licence "MIT"
   :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store alexandria)
   :components ((:file "src/package")
