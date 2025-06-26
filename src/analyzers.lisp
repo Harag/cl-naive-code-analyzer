@@ -37,7 +37,13 @@
 
 ;;; Analysis class for DEFINE-CONDITION forms.
 (defclass define-condition-analysis (analysis)
-  ((docstring :accessor analysis-docstring
+  ((slots :accessor analysis-slots
+          :initform nil
+          :documentation "A list of slot names defined in the condition.")
+   (superclasses :accessor analysis-superclasses
+                 :initform nil
+                 :documentation "A list of parent condition classes for this condition.")
+   (docstring :accessor analysis-docstring
               :initform nil
               :documentation "The documentation string of the condition, if present.")))
 
@@ -929,7 +935,15 @@
          (name (concrete-syntax-tree:raw name-cst))
          (supers (when (and supers-cst (concrete-syntax-tree:consp supers-cst))
                    (mapcar #'concrete-syntax-tree:raw
-                           (cst:listify supers-cst)))))
+                           (cst:listify supers-cst)))
+         ;; Extract just the slot names for now
+         (slot-names (when (and slots-cst (concrete-syntax-tree:consp slots-cst))
+                       (mapcar (lambda (slot-def-cst)
+                                 (if (concrete-syntax-tree:consp slot-def-cst)
+                                     (concrete-syntax-tree:raw
+                                      (concrete-syntax-tree:first slot-def-cst))
+                                     (concrete-syntax-tree:raw slot-def-cst)))
+                               (cst:listify slots-cst)))))
     ;; Extract docstring from options
     (when (and options (concrete-syntax-tree:consp options))
       (dolist (opt (cst:listify options))
@@ -943,16 +957,8 @@
     (setf (analysis-name analysis) name
           (analysis-kind analysis) :define-condition
           (analysis-docstring analysis) doc
-          ;; TODO: This should be analysis-superclasses, not
-          ;;       analysis-superclasses analysis (typo) Assuming
-          ;;       'define-condition-analysis' has a 'superclasses'
-          ;;       slot similar to 'defclass-analysis'.  If not, this
-          ;;       slot needs to be added or handled differently.  For
-          ;;       now, let's assume it should be
-          ;;       (analysis-superclasses analysis) supers.
-          ;;       Correcting based on defclass-analysis structure.
-          (analysis-superclasses analysis) supers)
-    ;; TODO: Populate (analysis-slots analysis) from slots-cst.
+          (analysis-superclasses analysis) supers
+          (analysis-slots analysis) slot-names)
 
     ;; Analyze slot definitions
     (when (and slots-cst (concrete-syntax-tree:consp slots-cst))
