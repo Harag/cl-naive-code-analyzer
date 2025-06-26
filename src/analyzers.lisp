@@ -474,31 +474,35 @@
                              (concrete-syntax-tree:consp args-cst)
                              (mapcar #'concrete-syntax-tree:raw
                                      (cst:listify args-cst))))
-        required optionals rest-name keywords allow-other-p auxes)
-    ;; Parse the lambda list when present.  PARSE-ORDINARY-LAMBDA-LIST
-    ;; returns multiple values rather than a list, so capture them with
-    ;; MULTIPLE-VALUE-BIND.
-    (when lambda-list
-      (multiple-value-setq (required optionals rest-name keywords allow-other-p auxes)
-        (alexandria:parse-ordinary-lambda-list
-         lambda-list
-         ;; Standardize lambda list keywords
-         :normalize t
-         ;; For generic function parameter lists (though this is defun)
-         :allow-specializers t
-         ;; Normalize (opt x) to (opt x nil opt-p)
-         :normalize-optional t
-         ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-         :normalize-keyword t
-         ;; Normalize &aux (x y) to &aux (x nil) (y nil)
-         :normalize-auxilary t)))
+==== BASE ====
+         (parsed        (when lambda-list
+                          (alexandria:parse-ordinary-lambda-list
+                           lambda-list
+                           ;; Standardize lambda list keywords
+                           :normalize t
+                           ;; For generic function parameter lists (though this is defun)
+                           :allow-specializers t
+                           ;; Normalize (opt x) to (opt x nil opt-p)
+                           :normalize-optional t
+                           ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
+                           :normalize-keyword t
+                                        ; Normalize &aux (x y) to &aux (x nil) (y nil)
+                           :normalize-auxilary t)))
+         ;; Destructure parsed lambda list components
+         (required      (first parsed))
+         (optionals     (second parsed)) ; list of (name init suppliedp)
+         (rest-name     (third parsed))  ; symbol or nil
+         (keywords      (fourth parsed)) ; list of ((keyword name) init suppliedp)
+         (allow-other-p (fifth parsed))  ; boolean
+         (auxes         (sixth parsed))) ; list of (name init)
+==== BASE ====
 
     ;; Populate analysis slots
-    (setf (analysis-name analysis)      name
+    (setf (analysis-name analysis) name
           ;; (analysis-kind analysis) is set by :around method, but :defun is more specific.
-          (analysis-kind analysis)      'defun ; Explicitly set to :defun symbol
+          (analysis-kind analysis) 'defun ; Explicitly set to :defun symbol
           (analysis-docstring analysis) doc
-          (analysis-raw-body analysis)  body-cst
+          (analysis-raw-body analysis) body-cst
           ;; Populate simple parameters list
           (analysis-parameters analysis)
           (append required
@@ -933,8 +937,7 @@
          (name (concrete-syntax-tree:raw name-cst))
          (supers (when (and supers-cst (concrete-syntax-tree:consp supers-cst))
                    (mapcar #'concrete-syntax-tree:raw
-                           (cst:listify supers-cst)))
-         ;; Extract just the slot names for now
+                           (cst:listify supers-cst))))
          (slot-names (when (and slots-cst (concrete-syntax-tree:consp slots-cst))
                        (mapcar (lambda (slot-def-cst)
                                  (if (concrete-syntax-tree:consp slot-def-cst)

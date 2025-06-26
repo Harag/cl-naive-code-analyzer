@@ -106,12 +106,12 @@
 
   ;; Attempt to retrieve an existing store for the project.
   (let* ((store (cl-naive-store:get-multiverse-element
-                 *universe* project-name :element-type :store)) ; Specify element-type for clarity
+                 :store *universe* project-name)) ; Specify element-type for clarity
 
          ;; Attempt to retrieve the "code-definitions" collection from the store if the store exists.
          (collection (when store
                        (cl-naive-store:get-multiverse-element
-                        store "code-definitions" :element-type :collection))))
+                        :collection store "code-definitions"))))
 
     ;; If the store doesn't exist, create it.
     (unless store
