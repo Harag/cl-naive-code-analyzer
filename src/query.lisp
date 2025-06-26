@@ -309,6 +309,7 @@ unless (query-analyzer
 :projects projects)
 collect func-def)))
 |#
+
 ;; Example usage comments (kept for context, but should be actual tests or examples elsewhere).
 ;; (uncalled-functions '("test-code"))
 ;; (uncalled-functions '("insite"))
