@@ -464,30 +464,28 @@
                             (concrete-syntax-tree:nthrest 3 cst)))
          (name          (concrete-syntax-tree:raw name-cst))
          ;; Parse the lambda list using Alexandria for detailed info
-         (lambda-list   (and args-cst
+        (lambda-list   (and args-cst
                              (concrete-syntax-tree:consp args-cst)
                              (mapcar #'concrete-syntax-tree:raw
                                      (cst:listify args-cst))))
-         (parsed        (when lambda-list
-                          (alexandria:parse-ordinary-lambda-list
-                           lambda-list
-                           ;; Standardize lambda list keywords
-                           :normalize t
-                           ;; For generic function parameter lists (though this is defun)
-                           :allow-specializers t
-                           ;; Normalize (opt x) to (opt x nil opt-p)
-                           :normalize-optional t
-                           ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-                           :normalize-keyword t
-                                        ; Normalize &aux (x y) to &aux (x nil) (y nil)
-                           :normalize-auxilary t)))
-         ;; Destructure parsed lambda list components
-         (required      (first parsed))
-         (optionals     (second parsed)) ; list of (name init suppliedp)
-         (rest-name     (third parsed))  ; symbol or nil
-         (keywords      (fourth parsed)) ; list of ((keyword name) init suppliedp)
-         (allow-other-p (fifth parsed))  ; boolean
-         (auxes         (sixth parsed))) ; list of (name init)
+        required optionals rest-name keywords allow-other-p auxes)
+    ;; Parse the lambda list when present.  PARSE-ORDINARY-LAMBDA-LIST
+    ;; returns multiple values rather than a list, so capture them with
+    ;; MULTIPLE-VALUE-BIND.
+    (when lambda-list
+      (multiple-value-setq (required optionals rest-name keywords allow-other-p auxes)
+        (alexandria:parse-ordinary-lambda-list
+         lambda-list
+         ;; Standardize lambda list keywords
+         :normalize t
+         ;; For generic function parameter lists (though this is defun)
+         :allow-specializers t
+         ;; Normalize (opt x) to (opt x nil opt-p)
+         :normalize-optional t
+         ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
+         :normalize-keyword t
+         ;; Normalize &aux (x y) to &aux (x nil) (y nil)
+         :normalize-auxilary t)))
 
     ;; Populate analysis slots
     (setf (analysis-name analysis)      name
