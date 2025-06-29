@@ -22,13 +22,22 @@ Instructions about how and when to make comments.
 
 1. Do not put any comments at the end of code lines like (....) ;comment. 
 2. Do not put comments when the code is clear on its own already. For example (if (not x) 1 2) ;Checks if x is nil.
+3. Do not put any comments before a ) even if its on a seperate line like below. My emacs configuration rolls up dangling ), which means if there is a preceding comment the ) becomes commented out.
+```
+;;coment
+)
+```
 
 ## Depth of analysis
 
 1. If you are digging through code to find an issue and you pick up similar issues to the one that you are looking for mention them.
 2. If you have a fix for an issue and you found similiar issues in the code suggest fixing those as well.
 
-## Command to test code
+## Tests 
+
+1. Dont' add additional comments to :expected output. Adding comments causes the tests to fail because you are deviating from the actual output. DUH!
+
+### TEST COMMAND
 
 DO NOT MUTATE THE DIRECTORIES in the command, use the command as is! The command has been tested inside the initialization script and runs successfully as IS!
 ```
@@ -40,3 +49,23 @@ sbcl --noinform --no-userinit --non-interactive \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
 		--eval '(cl-naive-tests:report (cl-naive-tests:run))' 	
 ```
+## Code Style
+
+1. Dont put flow functions like if, when, unless on ONE LINE.
+2. Use full descriptive variable names.
+3. Don't excede 80 chars on a line.
+4. When defining class slots use constistent order of options ([slot name] [initarg] [accessor] [iniform] [documentation])
+5. Format slots like the following:
+
+```
+ ([slot name] :initarg [initarg] 
+              :accessor [accessor] 
+			  :initform [iniform] 
+			  :documentation 
+			  [documentation])
+```
+
+## Where is the code
+
+1. Code for the project is in /app/
+2. Code for the dependecy projects are in /home/jule/source/
