@@ -11,5 +11,6 @@
                "cl-naive-code-analyzer")
   :components
   ((:file "tests/package")
-   (:file "tests/tests" :depends-on ("tests/package"))
+   (:file "tests/test-code/test" :depends-on ("tests/package"))
+   (:file "tests/tests" :depends-on ("tests/package" "tests/test-code/test"))
   ))
