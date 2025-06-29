@@ -41,7 +41,7 @@
         ,@(when (analysis-local-variable-uses a)
             `(:local-variable-uses ,(mapcar #'export-symbol (analysis-local-variable-uses a))))
         ,@(when (analysis-raw-body a)
-            `(:raw-body ,(format nil "~S" (analysis-raw-body a)))))))
+            `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
 ;;; These add specific information like parameters, docstrings, slots, etc.

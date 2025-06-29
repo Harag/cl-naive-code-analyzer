@@ -437,3 +437,78 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
     (store-project project)
     project))
 
+;;;; These exist for testing only at this stage.
+
+;;; Parses a Lisp code string using Eclector and generates initial analysis
+;;; objects for each top-level form in the string.
+(defun parse-string-with-eclector (code-string &key (package (find-package :cl-user)))
+  "Parses the Lisp CODE-STRING using Eclector.
+   Returns a list of 'analysis' objects, each corresponding to a top-level form.
+   PACKAGE specifies the initial package context for parsing."
+  (let* ((analyses '())
+         (client (make-instance 'analyzer-client :package package))
+         (eclector.reader:*client* client)
+         ;; Precompute offset-to-line mapping for the string
+         (line-map (offset-to-line-map code-string)))
+    (with-input-from-string (raw-stream code-string)
+      (let* ((tracking-stream (make-instance 'tracking-stream :underlying raw-stream))
+             (*readtable* (copy-readtable nil)))
+
+        (setf (client-package client) package) ; Ensure client package is set
+
+        (loop
+          for start = (tracking-stream-position tracking-stream)
+          for cst = (handler-case
+                        (eclector.concrete-syntax-tree:read tracking-stream nil nil)
+                      (eclector.reader:unknown-character-name (c)
+                        (format *error-output*
+                                "String reader error (unknown char name) at position ~A: ~A~%"
+                                (tracking-stream-position tracking-stream) c)
+                        (read-char tracking-stream nil nil)
+                        nil)
+                      (end-of-file () nil)
+                      (error (e)
+                        (format *error-output*
+                                "Generic string reader error at position ~A: ~A~%"
+                                (tracking-stream-position tracking-stream) e)
+                        nil))
+          while cst
+          for end = (tracking-stream-position tracking-stream)
+          for line = (offset-to-line start line-map)
+          for head-cst = (when (concrete-syntax-tree:consp cst)
+                           (concrete-syntax-tree:first cst))
+          for head = (when head-cst (concrete-syntax-tree:raw head-cst))
+          do (progn
+               (when (and head (eq head 'in-package))
+                 (let* ((package-arg-cst (concrete-syntax-tree:second cst))
+                        (pkg-name (when package-arg-cst
+                                    (concrete-syntax-tree:raw package-arg-cst))))
+                   (when pkg-name
+                     (setf (client-package client)
+                           (if (symbolp pkg-name)
+                               (find-package pkg-name)
+                               (find-package (string pkg-name)))))))
+
+               (let ((analysis (if head
+                                   (make-analyzer head)
+                                   (make-instance 'analysis))))
+                 (setf (analysis-start analysis) start)
+                 (setf (analysis-end analysis) end)
+                 (setf (analysis-line analysis) line)
+                 (setf (analysis-package analysis) (client-package client))
+                 (setf (analysis-cst analysis) cst)
+                 (push analysis analyses))))
+        (nreverse analyses)))))
+
+;;; Analyzes a string of Lisp code.
+(defun analyze-string (code-string &key (package (find-package :cl-user)))
+  "Analyzes the Lisp CODE-STRING.
+   First, parses the string to get basic analysis for each form.
+   Then, performs type-specific deeper analysis on each form.
+   Returns a list of 'analysis' objects for the forms in the string.
+   PACKAGE specifies the initial package context for parsing."
+  (let ((analyses (parse-string-with-eclector code-string :package package))
+        (results '()))
+    (dolist (analysis analyses)
+      (push (analyze-cst (analysis-cst analysis) analysis) results))
+    (nreverse results)))

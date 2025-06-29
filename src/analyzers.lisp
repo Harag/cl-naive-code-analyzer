@@ -502,8 +502,6 @@
 
     ;; Populate analysis slots
     (setf (analysis-name analysis) name
-          ;; (analysis-kind analysis) is set by :around method, but :defun is more specific.
-          (analysis-kind analysis) 'defun ; Explicitly set to :defun symbol
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis) body-cst
           ;; Populate simple parameters list
@@ -564,7 +562,6 @@
          (name         (concrete-syntax-tree:raw name-cst))
          (params       (simple-lambda-params args-cst)))
     (setf (analysis-name analysis)      name
-          (analysis-kind analysis)      'defmacro ; Explicitly set to :defmacro
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis)  body-cst
           (analysis-parameters analysis) params)
@@ -616,7 +613,6 @@
            (name         (real-raw name-cst)) ; Handles (SETF name) correctly
            (params       (simple-lambda-params args-cst)))
       (setf (analysis-name analysis) name
-            (analysis-kind analysis) 'defmethod ; Explicitly set
             (analysis-docstring analysis) doc
             (analysis-raw-body analysis) body-cst
             (analysis-parameters analysis) params)
@@ -652,7 +648,6 @@
          (name         (concrete-syntax-tree:raw name-cst))
          (params       (simple-lambda-params args-cst)))
     (setf (analysis-name analysis)      name
-          (analysis-kind analysis)      'deftype
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis)  body-cst
           (analysis-parameters analysis) params)
@@ -692,7 +687,6 @@
                        (stringp (concrete-syntax-tree:raw v)))
               (setf doc (concrete-syntax-tree:raw v)))))))
     (setf (analysis-name analysis) name
-          (analysis-kind analysis) 'defgeneric
           (analysis-docstring analysis) doc
           (analysis-parameters analysis) params)
     ;; Record lexical definitions for parameters
@@ -776,7 +770,6 @@
             (setf doc (concrete-syntax-tree:raw first-in-rest)))))
 
     (setf (analysis-name analysis) (real-raw name-cst)
-          (analysis-kind analysis) :defsetf
           (analysis-docstring analysis) doc)
 
     ;; TODO: Populate `analysis-parameters` correctly for both short and long forms.
@@ -803,7 +796,6 @@
   (let ((name-cst (concrete-syntax-tree:second cst))
         (expansion-cst (concrete-syntax-tree:third cst))) ; The expansion form
     (setf (analysis-name analysis) (concrete-syntax-tree:raw name-cst)
-          (analysis-kind analysis) :define-symbol-macro
           (analysis-raw-body analysis) expansion-cst) ; Store expansion as "raw-body"
     ;; Analyze the expansion form
     (when expansion-cst
@@ -849,7 +841,6 @@
                        (stringp (concrete-syntax-tree:raw v)))
               (setf doc (concrete-syntax-tree:raw v)))))))
     (setf (analysis-name analysis) name
-          (analysis-kind analysis) :defclass
           (analysis-docstring analysis) doc
           (analysis-superclasses analysis) supers
           (analysis-slots analysis) slot-names)
@@ -912,7 +903,6 @@
     (setf slots-cst (concrete-syntax-tree:nthrest slots-start-index cst))
 
     (setf (analysis-name analysis) name
-          (analysis-kind analysis) :defstruct
           (analysis-docstring analysis) doc)
     ;; TODO: Extract slot names and populate (analysis-slots analysis)
     ;; (analysis-slots analysis) (extract-slot-names slots-cst)
@@ -959,7 +949,6 @@
                        (stringp (concrete-syntax-tree:raw v)))
               (setf doc (concrete-syntax-tree:raw v)))))))
     (setf (analysis-name analysis) name
-          (analysis-kind analysis) :define-condition
           (analysis-docstring analysis) doc
           (analysis-superclasses analysis) supers
           (analysis-slots analysis) slot-names)
@@ -985,7 +974,6 @@
          (options (concrete-syntax-tree:nthrest 2 cst))
          (name (concrete-syntax-tree:raw name-cst)))
     (setf (analysis-name analysis) name
-          (analysis-kind analysis) :defpackage
           (analysis-package-name analysis) name)
     (when (and options (concrete-syntax-tree:consp options))
       ;; Each opt-cst is like (:use :cl) or (:export "FOO")
