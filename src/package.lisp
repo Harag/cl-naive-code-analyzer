@@ -30,12 +30,38 @@
    :cl-naive-store.naive-documents) ; Document handling from cl-naive-store.
 
   (:export
-   ;; Functions related to building and accessing the code index.
-   :build-index        ; TODO: Document what this function builds (project-level index?).
-   :build-file-index   ; TODO: Document what this function builds (file-level index?).
-   :get-index          ; TODO: Document what kind of index this retrieves and its usage.
 
-   ;; Functions for searching and querying the code analysis data.
-   :search-symbol      ; TODO: Document how to use this, what it searches for (definitions, references?).
-   :who-calls          ; TODO: Document its arguments (e.g., function name) and what it returns.
-   :search-for-locals)) ; TODO: Document what kind of locals this searches for and in what context.
+   :analysis
+   :analysis-name
+   :analysis-kind
+   :analysis-cst
+   :analysis-start
+   :analysis-end
+   :analysis-line
+   :analysis-package
+   :analysis-function-calls
+   :analysis-macro-calls
+   :analysis-variable-uses
+   :analysis-local-function-calls
+   :analysis-local-variable-uses
+   :analysis-lexical-definitions
+   :analysis-dynamic-definitions
+   :analysis-raw-body
+   :analysis-package
+
+   :analysis-lambda-info
+   :analysis-parameters
+   :analysis-docstring
+   :analysis-slots
+   :analysis-superclasses
+
+   ;;defpackage specific
+   :analysis-nicknames
+   :analysis-uses
+   :analysis-exports
+   :analysis-shadows
+   :analysis-imports
+   :analysis-interns
+   :other-options
+
+   :analyze-project))
