@@ -62,6 +62,6 @@
    :analysis-shadows
    :analysis-imports
    :analysis-interns
-   :other-options
+   :analysis-other-options
 
    :analyze-project))
