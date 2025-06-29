@@ -675,6 +675,7 @@
          (name     (concrete-syntax-tree:raw name-cst))
          (params   (simple-lambda-params args-cst))
          (doc      nil))
+
     ;; Extract docstring from options
     (when (and options (concrete-syntax-tree:consp options))
       (dolist (opt (cst:listify options))
@@ -1073,3 +1074,6 @@
 ;;; Uses 'defparameter-analysis' as it shares similar structure for analysis purposes.
 (defmethod make-analyzer ((type (eql 'defconstant)))
   (make-instance 'defparameter-analysis))
+
+(defmethod make-analyzer ((type (eql 'defgeneric)))
+  (make-instance 'defgeneric-analysis))
