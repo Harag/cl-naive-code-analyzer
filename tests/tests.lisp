@@ -27,7 +27,6 @@
   ;; Placeholder for a single test case.
   ;; Add multiple test cases within this suite or define more suites.
   (testcase :example-test-1 ; Example test case name
-            :description "An example test case (replace with actual test)."
             :expected t ; Replace with the expected outcome of the test.
             :actual (progn
                       ;; TODO: Put the actual code to be tested here.
