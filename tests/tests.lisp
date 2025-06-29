@@ -300,7 +300,7 @@
                    (equal 'test::test-defmacro-simple (analysis-name analysis))
                    (string= "A simple macro that wraps the form in a PROGN." (analysis-docstring analysis))
                    (equal '(test::form) (analysis-parameters analysis))
-                   (equal '`(progn ,test::form) (cst:raw (analysis-raw-body analysis))))))
+                   (equal '(ECLECTOR.READER:QUASIQUOTE (PROGN (ECLECTOR.READER:UNQUOTE TEST::FORM))) (cst:raw (analysis-raw-body analysis))))))
 
   (cl-naive-tests:testcase :defmacro-with-body
     :expected t
@@ -321,7 +321,7 @@
                    ;; For simplicity, checking if 'test::name and 'test::body are present.
                    (and (member 'test::name (analysis-parameters analysis))
                         (member 'test::body (analysis-parameters analysis)))
-                   (equal '`(let ((,test::name "macro-name")) (declare (ignorable ,test::name)) ,@test::body) (cst:raw (analysis-raw-body analysis))))))
+                   (equal '(ECLECTOR.READER:QUASIQUOTE (LET (((ECLECTOR.READER:UNQUOTE TEST::NAME) "macro-name")) (DECLARE (IGNORABLE (ECLECTOR.READER:UNQUOTE TEST::NAME))) (ECLECTOR.READER:UNQUOTE-SPLICING TEST::BODY))) (cst:raw (analysis-raw-body analysis))))))
 
   ;;--------------------------------------------------------------------------
   ;; DEFCLASS Tests
@@ -745,7 +745,7 @@
                    (equal 'test::test-deftype-simple (analysis-name analysis))
                    (string= "A simple custom type definition for positive integers." (analysis-docstring analysis))
                    (null (analysis-parameters analysis))
-                   (equal '`(integer 0 *) (cst:raw (analysis-raw-body analysis))))))
+                    (equal '(ECLECTOR.READER:QUASIQUOTE (INTEGER 0 *)) (cst:raw (analysis-raw-body analysis))))))
 
   (cl-naive-tests:testcase :deftype-params
     :expected t
@@ -758,7 +758,7 @@
                    (equal 'test::test-deftype-params (analysis-name analysis))
                    (string= "A custom type definition with parameters, defining a range." (analysis-docstring analysis))
                    (equal '(test::min test::max) (analysis-parameters analysis))
-                   (equal '`(integer ,test::min ,test::max) (cst:raw (analysis-raw-body analysis))))))
+                    (equal '(ECLECTOR.READER:QUASIQUOTE (INTEGER (ECLECTOR.READER:UNQUOTE TEST::MIN) (ECLECTOR.READER:UNQUOTE TEST::MAX))) (cst:raw (analysis-raw-body analysis))))))
 
   (cl-naive-tests:testcase :deftype-no-doc
     :expected t
@@ -770,7 +770,7 @@
                    (equal 'test::test-deftype-no-doc (analysis-name analysis))
                    (null (analysis-docstring analysis))
                    (null (analysis-parameters analysis))
-                   (equal '`string (cst:raw (analysis-raw-body analysis))))))
+                    (equal '(ECLECTOR.READER:QUASIQUOTE STRING) (cst:raw (analysis-raw-body analysis))))))
 
   ;;--------------------------------------------------------------------------
   ;; DEFSETF Tests (Simplified)
