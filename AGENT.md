@@ -28,3 +28,13 @@ Instructions about how and when to make comments.
 1. If you are digging through code to find an issue and you pick up similar issues to the one that you are looking for mention them.
 2. If you have a fix for an issue and you found similiar issues in the code suggest fixing those as well.
 
+## Command to test code
+```
+sbcl --noinform --no-userinit --non-interactive \
+		--eval '(load #P"~/quicklisp/setup.lisp")' \
+		--eval '(push "~/source/" ql:*local-project-directories*)' \
+		--eval '(push "/app/" ql:*local-project-directories*)' \
+		--eval '(push #P"/app/cl-naive-code-analyzer/" asdf:*central-registry*)' \
+		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
+		--eval '(cl-naive-tests:report (cl-naive-tests:run))' 	
+```
