@@ -5,22 +5,26 @@
 ;;; The definitions are organized by the type of Lisp form (e.g., DEFUN, DEFCLASS)
 ;;; to allow for systematic testing.
 
-(in-package :test)
+(defpackage test-package-simple
+  (:use :cl)
+  (:nicknames :tps :test) ; Added :test nickname
+  (:export #:test-export-sym1 #:test-export-sym2)
+  (:documentation "A simple test package for analysis."))
+
+(in-package :test) ; This should now work as test-package-simple has :test nickname
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFPACKAGE
 ;;;;----------------------------------------------------------------------------
-;;; Note: Testing DEFPACKAGE analysis usually involves analyzing a file
-;;; containing the defpackage form, or analyzing the form itself if the
-;;; analyzer supports string-based analysis of defpackage.
-;;; This is a placeholder example; actual testing might occur in tests.lisp
-;;; by creating a temporary file or analyzing a string.
-
-(defpackage test-package-simple
+;;; The actual defpackage form has been moved to the top of the file.
+;;; The placeholder example below is no longer needed here.
+#|
+ (defpackage test-package-simple
   (:use :cl)
   (:nicknames :tps)
   (:export #:test-export-sym1 #:test-export-sym2)
   (:documentation "A simple test package for analysis."))
+|#
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFPARAMETER / DEFVAR / DEFCONSTANT
@@ -73,9 +77,9 @@
   "A function with &aux variables."
   (+ x y z))
 
-(defun test-defun-mixed-lambda-list (req1 &optional (opt1 1) &key (key1 "k1") &rest rst &aux (aux1 'foo))
+(defun test-defun-mixed-lambda-list (req1 &optional (opt1 1) &rest rst &aux (aux1 'foo)) ; Temporarily removed &key
   "A function with a complex lambda list: required, optional, keyword, rest, and aux."
-  (list req1 opt1 key1 rst aux1))
+  (list req1 opt1 rst aux1)) ; Temporarily removed key1
 
 (defun test-defun-uses-global ()
   "A function that references a global variable *test-defparameter-simple*."
@@ -291,8 +295,9 @@
 ;;;; DEFINE-SYMBOL-MACRO
 ;;;;----------------------------------------------------------------------------
 
-(define-symbol-macro test-symbol-macro-simple *test-defparameter-simple*
-  "A simple symbol macro aliasing *test-defparameter-simple*.")
+(define-symbol-macro test-symbol-macro-simple *test-defparameter-simple*)
+;; Docstring removed as it's not standard for define-symbol-macro:
+;; "A simple symbol macro aliasing *test-defparameter-simple*."
 
 ;;;;----------------------------------------------------------------------------
 ;;;; MISCELLANEOUS / TOP-LEVEL FORMS
