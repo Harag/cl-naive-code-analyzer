@@ -38,4 +38,53 @@
    ;; Functions for searching and querying the code analysis data.
    :search-symbol      ; TODO: Document how to use this, what it searches for (definitions, references?).
    :who-calls          ; TODO: Document its arguments (e.g., function name) and what it returns.
-   :search-for-locals)) ; TODO: Document what kind of locals this searches for and in what context.
+   :search-for-locals ; TODO: Document what kind of locals this searches for and in what context.
+   :analyze-string
+   :analyze-file
+   :index-project-definitions
+   ;; Classes
+   :analysis
+   :defun-analysis
+   :defmethod-analysis
+   :define-condition-analysis
+   :defclass-analysis
+   :defparameter-analysis
+   :defmacro-analysis
+   :deftype-analysis
+   :defgeneric-analysis
+   :defstruct-analysis
+   :defsetf-analysis
+   :define-symbol-macro-analysis
+   :defpackage-analysis
+   :code-file
+   :code-project
+   ;; Accessors for analysis classes (common ones)
+   :analysis-name
+   :analysis-kind
+   :analysis-cst
+   :analysis-start
+   :analysis-end
+   :analysis-line
+   :analysis-package
+   :analysis-function-calls
+   :analysis-macro-calls
+   :analysis-variable-uses
+   :analysis-lexical-definitions
+   :analysis-raw-body
+   ;; Specific accessors
+   :analysis-lambda-info
+   :analysis-parameters
+   :analysis-docstring
+   :analysis-slots
+   :analysis-superclasses
+   ;; DEFPACKAGE specific accessors
+   :analysis-package-name
+   :analysis-nicknames
+   :analysis-uses
+   :analysis-exports
+   :analysis-shadows
+   :analysis-shadowing-imports
+   :analysis-imports
+   :analysis-interns
+   :analysis-other-options
+   ))
