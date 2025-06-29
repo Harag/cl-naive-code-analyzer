@@ -1,18 +1,21 @@
 ;;; query.lisp
 ;;;
-;;; This file provides functions and macros for querying the code analysis
-;;; data stored using `cl-naive-store`. It includes mechanisms for
-;;; defining named queries, initializing project stores for querying,
-;;; and performing queries with filtering, sorting, and limits.
+;;; This file provides functions and macros for querying the code
+;;; analysis data stored using `cl-naive-store`. It includes
+;;; mechanisms for defining named queries, initializing project stores
+;;; for querying, and performing queries with filtering, sorting, and
+;;; limits.
 
-;;; TODO: The `init-project` function here seems to duplicate some functionality
-;;;       of `init-project-store` from `naive-store.lisp` but with a focus
-;;;       on loading existing definitions. Clarify their roles and potentially merge.
+;;; TODO: The `init-project` function here seems to duplicate some
+;;;       functionality of `init-project-store` from
+;;;       `naive-store.lisp` but with a focus on loading existing
+;;;       definitions. Clarify their roles and potentially merge.
 
-;;; TODO: Review error handling, especially for cases where stores or collections
-;;;       might not be found or correctly initialized.
+;;; TODO: Review error handling, especially for cases where stores or
+;;;       collections might not be found or correctly initialized.
 
-;;; TODO: Consider making the location `"~/code-index-multiverse/"` configurable.
+;;; TODO: Consider making the location `"~/code-index-multiverse/"`
+;;; configurable.
 
 (in-package :cl-naive-code-analyzer)
 
@@ -28,12 +31,7 @@
 ;; It attempts to load store and collection definitions from disk if
 ;; not already in memory.
 
-;; TODO: This function is very similar to `init-project-store` in
-;;       `naive-store.lisp`.  Their differences (e.g., loading
-;;       vs. ensuring existence) should be clarified.  This version
-;;       seems more about loading for querying an *existing* indexed
-;;       project.
-(defun init-project (project)
+(defun load-store (project)
   "Initializes or loads the necessary store and collection for the given PROJECT name.
    Returns the 'code-definitions' collection for the project.
    Assumes project data has already been indexed and stored."
@@ -45,9 +43,9 @@
       (setf *multiverse*
             (make-instance
              'multiverse
-             :name "code-index-multiverse"
+             :name *multiverse-name*
              ;; TODO: Make configurable
-             :location "~/code-index-multiverse/"
+             :location (multiverse-location)
              :universe-class 'cl-naive-store:universe)))
     (unless *universe*
       (setf *universe*
@@ -55,10 +53,10 @@
              *multiverse*
              (make-instance
               'cl-naive-store:universe
-              :name "code-index-universe"
+              :name *universe-name*
               :multiverse *multiverse*
               ;; TODO: Make configurable
-              :location "~/code-index-multiverse/code-index-universe/"))))
+              :location (universe-location)))))
 
     ;; Get or load the project-specific store
     (setf store (cl-naive-store:get-multiverse-element
@@ -72,16 +70,19 @@
     ;; Get or load the 'code-definitions' collection from the store
     (when store
       (setf collection (cl-naive-store:get-multiverse-element
-                        :collection store "code-definitions"))
+                        :collection store *collection-name*))
+
       (unless collection
         (setf collection (cl-naive-store:load-from-definition-file
                           store
-                          "code-definitions"
+                          *collection-name*
                           :collection
                           :with-data-p t))))
-    ;; Return the collection, or NIL if store/collection couldn't be
+    ;; Return the collection, or ERROR if store/collection couldn't be
     ;; loaded/found.
-    collection))
+    (if (cl-naive-store:documents collection)
+        collection
+        (error "Project definitions not found."))))
 
 ;; Macro to define and register a named query.
 ;; NAME is a keyword, and LAMBDA is the query function.
@@ -158,7 +159,8 @@
                               (cond ((functionp query) query)
                                     ((keywordp query)
                                      (gethash query *registered-queries*))
-                                    (t (error "Invalid query type: ~A. Must be a function or registered keyword." query))))
+                                    (t (error "Invalid query type: ~A. Must be a function or registered keyword."
+                                              query))))
                             (results
                               (loop for store in stores
                                     when store
@@ -197,7 +199,6 @@
                                (subseq processed-results
                                        0
                                        (min limit (length processed-results)))))
-
                        processed-results))))))))
 
 ;; Helper function to find a symbol (represented as
@@ -246,7 +247,9 @@
   "Returns a lambda query function that finds all definitions within the specified PATHNAME."
   ;; TODO: Ensure pathname comparison is robust
   ;; (e.g., using `uiop:pathname-equal`).
-  (let ((target-namestring (if (pathnamep pathname) (namestring pathname) pathname)))
+  (let ((target-namestring (if (pathnamep pathname)
+                               (namestring pathname)
+                               pathname)))
     (lambda (definition)
       (equalp (getf definition :filename) target-namestring))))
 
@@ -258,25 +261,9 @@
     (lambda (definition)
       ;; Compares the :name sub-property of the :kind property of the definition.
 
-      ;; TODO: The structure `(getf (getf
-      ;;       definition :kind) :name)` implies
-      ;;       :kind is a plist, but
-      ;;       `analysis-kind` is usually a single
-      ;;       symbol like 'DEFUN. This needs
-      ;;       review.  Assuming :kind is directly
-      ;;       the symbol, it should be `(getf
-      ;;       definition :kind)`.  If :kind is
-      ;;       `(:name 'defun ...)` then this is
-      ;;       correct.  Based on `write-analysis`,
-      ;;       :kind is a direct symbol. So, this
-      ;;       should be: `(member (getf definition
-      ;;       :kind) '(defun defmethod ...))`
+      ;; :kind is of the form  `(:name 'defun ...)
       (let ((kind-val (getf definition :kind)))
         (member (if (consp kind-val) (getf kind-val :name) kind-val)
-                ;; Added 'function' for
-                ;; completeness, removed
-                ;; "setf-macrolet" as it's not
-                ;; standard.
                 '(defun defmethod lambda function)
                 :test #'string-equal))))
 
@@ -286,7 +273,9 @@
       ;; Similar to :all-functions, adjusting for
       ;; :kind structure.
       (let ((kind-val (getf definition :kind)))
-        (string-equal (if (consp kind-val) (getf kind-val :name) kind-val)
+        (string-equal (if (consp kind-val)
+                          (getf kind-val :name)
+                          kind-val)
                       "defmacro"))))
 #|
 ;; === Analysis that is deeper than a simple query ===
@@ -314,22 +303,6 @@ collect func-def)))
 ;; (uncalled-functions '("test-code"))
 ;; (uncalled-functions '("insite"))
 ;; (query-analyzer :all-functions :projects '("test-code"))
-;; (init-project "test-code")
+;; (load-project "test-code")
 ;; (break "~S" *universe*)
 
-#|
-;; Example of using naive-impl::safe-writer, likely for debugging or testing cl-naive-store.
-;; This is not directly related to the query logic but was present in the original file.
-(with-open-file (s "~/Downloads/test-output.lisp"
-:direction :output :if-exists :supersede)
-(let ((foo "foo")
-(writer (make-instance 'naive-impl::safe-writer))
-(hash (make-hash-table :size 2)))
-(naive-impl::safe-write
-(list :name foo
-:info "abc def"
-:vector #(a b c)
-:hash hash
-:type-of (type-of writer))
-writer s)))
-|#

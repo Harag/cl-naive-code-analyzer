@@ -155,7 +155,7 @@
 
 ;; TODO: Needs implementation
 (defun serialize-slot (slot)
-  slot)
+  (export-symbol slot))
 
 (defmethod write-analysis ((a defclass-analysis) filename &key)
   "Serializes a 'defclass-analysis' object, including docstring, superclasses, and slots."
