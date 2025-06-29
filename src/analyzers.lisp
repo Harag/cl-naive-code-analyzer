@@ -115,7 +115,9 @@
 ;; No specific slots beyond the base 'analysis' class yet.
 ;; TODO: Consider adding a slot for the expansion if needed for analysis.
 (defclass define-symbol-macro-analysis (analysis)
-  ())
+  ((docstring :accessor analysis-docstring
+              :initform nil
+              :documentation "The documentation string of the setf definition, if present.")))
 
 ;;; Analysis class for DEFPACKAGE forms.
 (defclass defpackage-analysis (analysis)
