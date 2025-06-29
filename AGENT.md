@@ -29,6 +29,8 @@ Instructions about how and when to make comments.
 2. If you have a fix for an issue and you found similiar issues in the code suggest fixing those as well.
 
 ## Command to test code
+
+DO NOT MUTATE THE DIRECTORIES in the command, use the command as is! The command has been tested inside the initialization script and runs successfully as IS!
 ```
 sbcl --noinform --no-userinit --non-interactive \
 		--eval '(load #P"~/quicklisp/setup.lisp")' \
