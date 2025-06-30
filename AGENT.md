@@ -45,7 +45,7 @@ sbcl --noinform --no-userinit --non-interactive \
 		--eval '(load #P"~/quicklisp/setup.lisp")' \
 		--eval '(push "~/source/" ql:*local-project-directories*)' \
 		--eval '(push "/app/" ql:*local-project-directories*)' \
-		--eval '(push #P"/app/cl-naive-code-analyzer/" asdf:*central-registry*)' \
+		--eval '(push #P"/app/" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
 		--eval '(in-package :cl-naive-code-analyzer.tests)' \
 		--eval '(format t "~S~%" (cl-naive-tests:run))' 	
@@ -70,3 +70,36 @@ sbcl --noinform --no-userinit --non-interactive \
 
 1. Code for the project is in /app/
 2. Code for the dependecy projects are in /home/jule/source/
+
+## Design Decisions/Particulars
+
+These are in no particular order.
+
+1. When writing out to the store we cannot write out symbols in the
+   way that the lisp reader would read them back like
+   my-package:my-symbol. The reason for that is that when the store is
+   read later on the package might not exist. So we "export" symbols
+   to (:name "my-symbol" :package "my-package") for safe reading
+   later.
+
+2. The cst and raw-body slots on analysis class is there to help us
+   write analyzers and for possible debugging. The cst's stored in
+   there are concrete-syntax-tree cst's produced by eclector when
+   reading. We don't try to fight the peculuaralities of the way they
+   are sturcture. Each analyzer must just extract what it needs based
+   on how concrete-syntac-tree cst's work. In testing code
+   specifically we need to be careful that we dont test cst structure
+   because that will only confuse us and the tests.
+
+3. Testing code some times uses analyze-string which is a poor version
+   analyze-project. By that I mean that analyze-string does not deal
+   with packagages properly because it does not have complete context
+   of the a full project.
+
+4. Testing code should use :: for symbols not exported, we dont want
+   export symbols purely for testing purposes.
+
+5. Testing code written should be run from within the
+   cl-naive-code-analyzer.tests package so that comparisons of print
+   output have the same package prefixes. The test command does this
+   correctly.
