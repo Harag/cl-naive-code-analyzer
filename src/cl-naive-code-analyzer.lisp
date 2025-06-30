@@ -512,3 +512,4 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
     (dolist (analysis analyses)
       (push (analyze-cst (analysis-cst analysis) analysis) results))
     (nreverse results)))
+

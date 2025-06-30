@@ -47,7 +47,8 @@ sbcl --noinform --no-userinit --non-interactive \
 		--eval '(push "/app/" ql:*local-project-directories*)' \
 		--eval '(push #P"/app/cl-naive-code-analyzer/" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
-		--eval '(cl-naive-tests:report (cl-naive-tests:run))' 	
+		--eval '(in-package :cl-naive-code-analyzer.tests)' \
+		--eval '(format t "~S~%" (cl-naive-tests:run))' 	
 ```
 ## Code Style
 
