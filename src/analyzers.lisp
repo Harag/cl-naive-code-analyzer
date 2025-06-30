@@ -1077,3 +1077,4 @@
 
 (defmethod make-analyzer ((type (eql 'defgeneric)))
   (make-instance 'defgeneric-analysis))
+
