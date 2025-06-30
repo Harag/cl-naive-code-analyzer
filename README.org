@@ -15,8 +15,8 @@ project boundaries. Its primary goals are to support AI-assisted
 context discovery, dead code detection, and future inference of
 architectural patterns.
 
-*WARNING:* The code was written by ChatGPT-4o (with extensive verbal
-abuse from me) use at your own risk.
+*WARNING:* The code was written by ChatGPT-4o, then hacked by ChatGPT
+codex and is now mostly in the hands of Google Jules.
 
 *WARNING:* The code is PRE-ALPHA and changing weekly with breaking changes!
 
