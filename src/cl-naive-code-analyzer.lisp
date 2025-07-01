@@ -316,7 +316,7 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
 
 ;;; Analyzes all specified file paths and groups them into a
 ;;; 'code-project' object.
-(defun analyze-project (file-paths &key (name "default-project"))
+(defun analyze-project% (file-paths &key (name "default-project"))
   "Analyzes a list of Lisp source files (FILE-PATHS) and returns a 'code-project' object.
    NAME provides a symbolic name for this project."
   ;; TODO: Consider parallelizing file analysis for large projects.
@@ -406,7 +406,7 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
                     (warn "System ~A (or its dependencies) defines no source files directly that were found."
                           system-name))
                   sys-files))))
-      (analyze-project files-to-analyze :name system-name))))
+      (analyze-project% files-to-analyze :name system-name))))
 
 ;;; Stores the analysis resu lts of a project into a persistent store
 ;;; (cl-naive-store).
@@ -426,7 +426,7 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
            (write-analysis analysis filename)))))))
 
 ;;; Main entry point to analyze an ASDF system and store its definitions.
-(defun index-project-definitions (system-name source-dir &optional file)
+(defun analyze-project (system-name source-dir &optional file)
   "High-level function to load, analyze, and store definitions for an ASDF project.
    SYSTEM-NAME is the name of the system.
    SOURCE-DIR is the directory containing the .asd file.

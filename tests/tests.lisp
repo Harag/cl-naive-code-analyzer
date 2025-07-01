@@ -943,5 +943,46 @@
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
 
-;;(cl-naive-tests:run)
+(let* ((project "test-code"))
 
+  (analyze-project project
+                   (asdf:system-source-directory project))
+
+  (cl-naive-tests:testsuite :project-suite
+    (cl-naive-tests:testcase
+     :project-analysis-persisted
+     :expected t
+     :actual (uiop:file-exists-p "~/code-multiverse/code-universe/test-code/code-definitions/code-definitions.log")))
+
+  (cl-naive-tests:testsuite :project-suite
+    (cl-naive-tests:testcase
+     :load-project
+     :expected '(:NAME (:NAME "TEST-DEFUN-NO-DOCSTRING"
+                        :PACKAGE "TEST-PACKAGE-SIMPLE")
+                 :PACKAGE "TEST-PACKAGE-SIMPLE"
+                 :FILENAME nil
+                 :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP") :LINE 55 :START 2017 :END 2107
+                 :CODE "(DEFUN TEST-PACKAGE-SIMPLE::TEST-DEFUN-NO-DOCSTRING
+       (TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)
+  (+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B))"
+                 :FUNCTION-CALLS ((:NAME "+" :PACKAGE "COMMON-LISP")) :MACRO-CALLS NIL
+                 :VARIABLE-USES NIL :LEXICAL-DEFINITIONS
+                 ((:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE")
+                  (:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE"))
+                 :DYNAMIC-DEFINITIONS NIL :RAW-BODY
+                 "(+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)" :LAMBDA-INFO
+                 (:REQUIRED (TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B) :OPTIONALS NIL
+                  :REST NIL :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL :AUXES NIL)
+                 :PARAMETERS
+                 ((:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
+                  (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE"))
+                 :HASH nil)
+     :actual (let ((func (first (find-function (list project)
+                                               "TEST-DEFUN-NO-DOCSTRING"))))
+               ;;Clearing properties that would be environment
+               ;;specific for tests.
+               (setf (getf func :filename) nil)
+               (setf (getf func :hash) nil)
+               func))))
+
+;;(cl-naive-tests:run)
