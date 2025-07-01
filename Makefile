@@ -12,6 +12,7 @@ test tests:
 		--eval '(push "$(DEPENDENCYDIR)" ql:*local-project-directories*)' \
 		--eval '(push #P"$(THISDIR)" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
+		--eval '(in-package :cl-naive-code-analyzer.tests)' \
 		--eval '(cl-naive-tests:run)' \
 		--eval '(cl-naive-tests:run)' \
 		--eval '(cl-naive-tests:write-results cl-naive-tests:*suites-results* :format :text)' \
