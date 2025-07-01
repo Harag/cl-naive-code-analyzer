@@ -7,11 +7,11 @@
 
 (defpackage test-package-simple
   (:use :cl)
-  (:nicknames :tps :test) ; Added :test nickname
+  (:nicknames :tps :test-package-simple) ; Added :test nickname
   (:export #:test-export-sym1 #:test-export-sym2)
   (:documentation "A simple test package for analysis."))
 
-(in-package :test) ; This should now work as test-package-simple has :test nickname
+(in-package :test-package-simple) ; This should now work as test-package-simple has :test nickname
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFPACKAGE
@@ -19,11 +19,11 @@
 ;;; The actual defpackage form has been moved to the top of the file.
 ;;; The placeholder example below is no longer needed here.
 #|
- (defpackage test-package-simple
-  (:use :cl)
-  (:nicknames :tps)
-  (:export #:test-export-sym1 #:test-export-sym2)
-  (:documentation "A simple test package for analysis."))
+(defpackage test-package-simple
+(:use :cl)
+(:nicknames :tps)
+(:export #:test-export-sym1 #:test-export-sym2)
+(:documentation "A simple test package for analysis."))
 |#
 
 ;;;;----------------------------------------------------------------------------
@@ -100,7 +100,6 @@
   (let ((x 10)) x) ; A form before the string
   "Explicit return string")
 
-
 ;; Helper functions used by other test forms (e.g. class initforms, struct defaults)
 (defun helper-default-value-for-slot ()
   "Provides a default value for a slot."
@@ -131,8 +130,8 @@
 (defun test-defun-uses-macro-with-body ()
   "A function that uses test-defmacro-with-body."
   (test-defmacro-with-body my-var
-    (print "First body form")
-    (print "Second body form")))
+                           (print "First body form")
+                           (print "Second body form")))
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFCLASS
@@ -289,7 +288,6 @@
 (defsetf test-get-nth-char (s n) (new-char)
   "Sets the Nth character of string S to NEW-CHAR."
   `(setf (char (the string ,s) (the fixnum ,n)) (the character ,new-char)))
-
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFINE-SYMBOL-MACRO
