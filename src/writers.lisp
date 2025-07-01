@@ -1,5 +1,8 @@
 (in-package :cl-naive-code-analyzer)
 
+(defmethod write-analysis :around((a analysis) filename &key)
+  (let ((*export-symbol-standin* (analysis-package a)))
+    (call-next-method)))
 ;;; Default method for WRITE-ANALYSIS. Serializes generic slots common
 ;;; to all analysis types.  Subclasses specialize this method to add
 ;;; slots like docstrings or parameters where applicable.
@@ -14,12 +17,12 @@
   ;;        re-serializing the CST.  It would require having the file
   ;;        content available here or passing start/end to
   ;;        `normalize-reader-macros`.
-  `(,@`(:name , (analysis-name a)
+  `(,@`(:name , (export-symbol (analysis-name a))
         :package ,(if (packagep (analysis-package a))
                       (package-name (analysis-package a))
                       (analysis-package a))
         :filename ,filename
-        :kind ,(analysis-kind a)
+        :kind ,(export-symbol (analysis-kind a))
         :line ,(analysis-line a)
         :start ,(analysis-start a)
         :end ,(analysis-end a)
@@ -148,8 +151,8 @@
           ,(analysis-imports a)))
     ,@(when (analysis-interns a)
         `(:interns ,(mapcar #'export-symbol (analysis-interns a))))
-    ,@(when (analysis-other-options a)
-        `(:other-options ,(analysis-other-options a)))))
+    ,@(when (analysis-size a)
+        `(:other-size ,(analysis-size a)))))
 
 ;;; Specialized method for DEFCLASS to include superclasses and slots.
 
