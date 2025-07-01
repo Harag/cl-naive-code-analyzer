@@ -945,6 +945,14 @@
 
 (let* ((project "test-code"))
 
+  ;; Make sure testing environment is clean before we test.
+  (setf cl-naive-code-analyzer::*multiverse* nil)
+  (setf cl-naive-code-analyzer::*universe* nil)
+
+  ;;TODO: This is dangerous you could wipe your machine, need to find
+  ;;a safer way.
+  (fad:delete-directory-and-files "~/code-multiverse/" :if-does-not-exist  :ignore)
+
   (analyze-project project
                    (asdf:system-source-directory project))
 
