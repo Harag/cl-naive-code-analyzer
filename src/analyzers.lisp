@@ -157,10 +157,10 @@
     :initform nil
     :accessor analysis-docstring
     :documentation "The documentation string for the package.")
-   (other-options
+   (size
     :initform nil
-    :accessor analysis-other-options
-    :documentation "A list of any other DEFPACKAGE options encountered.")))
+    :accessor analysis-size
+    :documentation "Size hint raw.")))
 
 ;;; Helper function to get the raw value from a CST node.
 ;;; If the CST is a cons, it gets the raw value of the first element.
@@ -710,14 +710,21 @@
   ;;       needed (currently uses analysis-kind set by :around).  The
   ;;       :around method sets it to 'defparameter, 'defvar, or
   ;;       'defconstant based on the cst head.
+  ;;reak "~S" (length (concrete-syntax-tree:raw  cst)))
   (let* ((name-cst (concrete-syntax-tree:second cst))
          (init-cst (concrete-syntax-tree:third cst))
-         (possible-doc (concrete-syntax-tree:fourth cst))
-         (doc (when (and possible-doc
-                         (concrete-syntax-tree:atom possible-doc)
-                         (stringp (concrete-syntax-tree:raw possible-doc)))
-                (concrete-syntax-tree:raw possible-doc)))
+         ;;Make sure there is documentation before trying to get to
+         ;;it. This was the simplest check, trying to check it through
+         ;;the actual cst you would have to walk through the rests to
+         ;;check. You cant use fourth because if it does not exist it
+         ;;crashes. You can also not grap third and check for rest
+         ;;because third = (fort (nth 2 cst)) which means you cant get
+         ;;to the rest!
+         (doc (when (= (length (concrete-syntax-tree:raw  cst))
+                       4)
+                (concrete-syntax-tree:raw (concrete-syntax-tree:fourth cst))))
          (name (concrete-syntax-tree:raw name-cst)))
+
     (setf (analysis-name analysis) name
           ;; Kind is set by :around method, e.g. 'defparameter,
           ;; 'defvar, 'defconstant (analysis-kind analysis) ; No need
@@ -733,8 +740,77 @@
          (gather-info current-init-cst analysis))))
     analysis))
 
-;;; Specialized method for ANALYZE-CST for DEFSETF forms.
 (defmethod analyze-cst (cst (analysis defsetf-analysis))
+  "Analyzes a DEFSETF CST. Extracts name, docstring, parameters (long form), and body (long form).
+   Populates the DEFSETF-ANALYSIS object."
+  (let* ((name (real-raw (concrete-syntax-tree:second cst)))
+         (docstring nil)
+         ;; For long form
+         (parameters nil)
+         ;; For long form / update-fn for short form
+         (raw-body-cst nil)
+         (third-arg-cst (concrete-syntax-tree:third cst)))
+
+    (if (and third-arg-cst (concrete-syntax-tree:consp third-arg-cst))
+        ;; Likely Long Form: (defsetf access-fn lambda-list
+        ;; (store-vars) [doc/decls] body)
+        (let* ((lambda-list-cst third-arg-cst)
+               ;; store-vars-cst is (concrete-syntax-tree:fourth cst)
+               ;; Doc/decls/body starts from the fifth element of the
+               ;; original CST (index 4)
+               (remaining-cst-list (concrete-syntax-tree:nthrest 4 cst)))
+
+          (setf parameters (simple-lambda-params lambda-list-cst))
+
+          (if (and remaining-cst-list (concrete-syntax-tree:consp remaining-cst-list))
+              (let ((first-in-remaining (concrete-syntax-tree:first remaining-cst-list)))
+                (if (and first-in-remaining
+                         (concrete-syntax-tree:atom first-in-remaining)
+                         (stringp (concrete-syntax-tree:raw first-in-remaining)))
+                    (progn ; Docstring present
+                      (setf docstring (concrete-syntax-tree:raw first-in-remaining))
+                      ;; Body is after docstring
+                      (setf raw-body-cst
+                            (concrete-syntax-tree:rest remaining-cst-list)))
+                    ;; No docstring as first element, all of remaining
+                    ;; is body/declarations
+                    (setf raw-body-cst remaining-cst-list)))
+              ;; No docstring and no body forms (e.g. defsetf
+              ;; long-accessor (obj) (val)) - raw-body-cst remains nil
+              (setf raw-body-cst nil)))
+        ;; Likely Short Form: (defsetf access-fn update-fn [doc])
+        (let ((possible-doc-cst (concrete-syntax-tree:fourth cst)))
+          (if (and possible-doc-cst
+                   (concrete-syntax-tree:atom possible-doc-cst)
+                   (stringp (concrete-syntax-tree:raw possible-doc-cst)))
+              (setf docstring (concrete-syntax-tree:raw possible-doc-cst)))
+          ;; For short form, parameters slot remains nil.
+          ;; Set raw-body to the update-fn/function-name CST.
+          (setf raw-body-cst third-arg-cst)))
+
+    (setf (analysis-name analysis) name
+          (analysis-docstring analysis) docstring
+          (analysis-parameters analysis) parameters
+          (analysis-raw-body analysis) raw-body-cst)
+
+    ;; Lexical definitions from parameters (for long form)
+    (dolist (p parameters)
+      (when (symbolp p)
+        (pushnew p (analysis-lexical-definitions analysis) :test #'eq)))
+
+    ;; Walk the relevant parts for gather-info.
+    ;; This covers lambda-list, store-vars, body for long form.
+    ;; For short form, it covers update-fn and docstring.
+    (let ((rest-of-form (concrete-syntax-tree:nthrest 2 cst)))
+      (when rest-of-form
+        (walk-cst-with-context rest-of-form
+                               (lambda (current-rest-cst path tail)
+                                 (declare (ignore path tail))
+                                 (gather-info current-rest-cst analysis)))))
+    analysis))
+
+;;; Specialized method for ANALYZE-CST for DEFSETF forms.
+(defmethod analyze-cst_ (cst (analysis defsetf-analysis))
   "Analyzes a DEFSETF CST. Extracts name, parameters (for short form), and docstring.
    Populates the DEFSETF-ANALYSIS object."
   ;; TODO: DEFSETF has two forms (short and long). This currently
@@ -977,9 +1053,12 @@
     (setf (analysis-name analysis) name
           (analysis-package-name analysis) name)
     (when (and options (concrete-syntax-tree:consp options))
+
       ;; Each opt-cst is like (:use :cl) or (:export "FOO")
       (dolist (opt-cst (cst:listify options))
+
         (when (concrete-syntax-tree:consp opt-cst)
+
           (let* ((key-cst (concrete-syntax-tree:first opt-cst))
                  (key (concrete-syntax-tree:raw key-cst))
                  (vals-cst (concrete-syntax-tree:rest opt-cst)))
@@ -1016,8 +1095,13 @@
                             (stringp (concrete-syntax-tree:raw doc-val-cst)))
                    (setf (analysis-docstring analysis)
                          (concrete-syntax-tree:raw doc-val-cst)))))
-              ;; TODO: Handle :size if important.
-              (t (push (real-raw opt-cst) (analysis-other-options analysis))))))))
+              (:size
+               (setf (analysis-size analysis)
+                     (real-raw
+                      (concrete-syntax-tree:second opt-cst))))
+              (:otherwise
+               (error "Unknown depackage option.")))))))
+
     analysis))
 
 ;;;
