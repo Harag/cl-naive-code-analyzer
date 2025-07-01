@@ -46,6 +46,38 @@
         ,@(when (analysis-raw-body a)
             `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
+(defun serialize-lambda-list-info (lambda-info)
+  (when lambda-info
+    `(:required ,(mapcar #'export-symbol (getf lambda-info :required))
+      :optionals ,(mapcar (lambda (opt)
+                            (list (export-symbol (first opt)) ; name
+                                  (second opt) ; init-form (remains as is)
+                                  ;; supplied-p
+                                  (when (third opt) (export-symbol (third opt)))))
+                          (getf lambda-info :optionals))
+      :rest ,(when (getf lambda-info :rest)
+               (export-symbol (getf lambda-info :rest)))
+      :keywords ,(mapcar (lambda (kw)
+
+                           (list
+                            ;; keyword symbol itself (e.g. :foo)
+                            (list (first (first kw))
+                                  ;; var name
+                                  (export-symbol (second (first kw))))
+                            ;; init-form
+                            (second kw)
+                                        ; supplied-p
+                            (when (third kw) (export-symbol (third kw)))))
+                         (getf lambda-info :keywords))
+      :allow-other-keys ,(getf lambda-info :allow-other-keys)
+      :auxes ,(mapcar (lambda (aux)
+                        (list
+                         ;; name
+                         (export-symbol (first aux))
+                         ;; init-form
+                         (second aux)))
+                      (getf lambda-info :auxes)))))
+
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
 ;;; These add specific information like parameters, docstrings, slots, etc.
 
@@ -54,7 +86,7 @@
   `(;; Include generic analysis properties
     ,@(call-next-method)
     ,@(when (analysis-lambda-info a)
-        `(:lambda-info ,(analysis-lambda-info a)))
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
         `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
     ,@(when (analysis-docstring a)

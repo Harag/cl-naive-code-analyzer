@@ -101,7 +101,8 @@
      :defun-sexp
      :equal #'equalp
      :expected '(:NAME (:NAME "TEST-DEFUN-SIMPLE" :PACKAGE "COMMON-LISP-USER")
-                 :PACKAGE "COMMON-LISP-USER"
+                 :PACKAGE
+                 "COMMON-LISP-USER"
                  :FILENAME NIL
                  :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP")
                  :LINE 1 :START 0 :END 150
@@ -116,11 +117,8 @@
                  :RAW-BODY
                  "(LIST 1 2 3)"
                  :LAMBDA-INFO
-                 (:REQUIRED NIL
-                  :OPTIONALS NIL
-                  :REST NIL
-                  :KEYWORDS NIL
-                  :ALLOW-OTHER-KEYS NIL
+                 (:REQUIRED NIL :OPTIONALS NIL :REST NIL
+                  :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL
                   :AUXES NIL)
                  :DOCSTRING "A simple function with no arguments and a docstring.")
 
@@ -965,27 +963,35 @@
   (cl-naive-tests:testsuite :project-suite
     (cl-naive-tests:testcase
      :load-project
-     :expected '(:NAME (:NAME "TEST-DEFUN-NO-DOCSTRING"
-                        :PACKAGE "TEST-PACKAGE-SIMPLE")
+     :expected '(:NAME (:NAME "TEST-DEFUN-NO-DOCSTRING" :PACKAGE "TEST-PACKAGE-SIMPLE")
                  :PACKAGE "TEST-PACKAGE-SIMPLE"
-                 :FILENAME nil
-                 :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP") :LINE 55 :START 2017 :END 2107
-                 :CODE "(DEFUN TEST-PACKAGE-SIMPLE::TEST-DEFUN-NO-DOCSTRING
+                 :FILENAME NIL
+                 :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP")
+                 :LINE 55 :START 2017 :END 2107
+                 :CODE
+                 "(DEFUN TEST-PACKAGE-SIMPLE::TEST-DEFUN-NO-DOCSTRING
        (TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)
   (+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B))"
-                 :FUNCTION-CALLS ((:NAME "+" :PACKAGE "COMMON-LISP")) :MACRO-CALLS NIL
-                 :VARIABLE-USES NIL :LEXICAL-DEFINITIONS
+                 :FUNCTION-CALLS ((:NAME "+" :PACKAGE "COMMON-LISP"))
+                 :MACRO-CALLS NIL
+                 :VARIABLE-USES NIL
+                 :LEXICAL-DEFINITIONS
                  ((:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE")
                   (:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE"))
-                 :DYNAMIC-DEFINITIONS NIL :RAW-BODY
-                 "(+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)" :LAMBDA-INFO
-                 (:REQUIRED (TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B) :OPTIONALS NIL
-                  :REST NIL :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL :AUXES NIL)
+                 :DYNAMIC-DEFINITIONS NIL
+                 :RAW-BODY
+                 "(+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)"
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
+                   (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE"))
+                  :OPTIONALS NIL :REST NIL :KEYWORDS NIL
+                  :ALLOW-OTHER-KEYS NIL :AUXES NIL)
                  :PARAMETERS
                  ((:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
                   (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE"))
-                 :HASH nil)
-     :actual (let ((func (first (find-function (list project)
+                 :HASH NIL)
+     :actual (let ((func (first (find-function (list "test-code")
                                                "TEST-DEFUN-NO-DOCSTRING"))))
                ;;Clearing properties that would be environment
                ;;specific for tests.
