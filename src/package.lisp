@@ -64,5 +64,16 @@
    :analysis-interns
    :analysis-size
 
-   :analyze-project))
+   :analyze-project
+
+   ;;Query
+   :load-project
+   :defquery
+   :match-symbol
+   :make-callers-of-query
+   :make-uses-symbol-query
+   :make-functions-in-file-query
+   :query-analyzer
+   :find-function
+   :uncalled-functions))
 

@@ -31,7 +31,7 @@
 ;; It attempts to load store and collection definitions from disk if
 ;; not already in memory.
 
-(defun load-store (project)
+(defun load-project (project)
   "Initializes or loads the necessary store and collection for the given PROJECT name.
    Returns the 'code-definitions' collection for the project.
    Assumes project data has already been indexed and stored."
@@ -257,13 +257,15 @@
 ;;; These are examples of how to define reusable queries.
 
 ;; Query to find all function-like definitions.
-(defquery :all-functions
+(defquery :functions
     (lambda (definition)
       ;; Compares the :name sub-property of the :kind property of the definition.
 
       ;; :kind is of the form  `(:name 'defun ...)
       (let ((kind-val (getf definition :kind)))
-        (member (if (consp kind-val) (getf kind-val :name) kind-val)
+        (member (if (consp kind-val)
+                    (getf kind-val :name)
+                    kind-val)
                 '(defun defmethod lambda function)
                 :test #'string-equal))))
 
@@ -277,9 +279,29 @@
                           (getf kind-val :name)
                           kind-val)
                       "defmacro"))))
-#|
-;; === Analysis that is deeper than a simple query ===
-;; Example of a more complex analysis: finding uncalled functions.
+
+(defun query-analyzer (query &key projects)
+  (loop for project in projects
+        for collection = (load-project project)
+        when collection
+        append (cl-naive-store:query-data
+                collection
+                :query (or (gethash query *registered-queries*) query))))
+
+(defun find-function (projects function-name)
+  (query-analyzer
+   (lambda (definition)
+     (let ((kind-val (getf definition :kind)))
+       (and (member (if (consp kind-val)
+                        (getf kind-val :name)
+                        kind-val)
+                    '(defun defmethod function)
+                    :test #'string-equal)
+            (equalp function-name (getf (getx definition :name) :name)))))
+   :projects projects))
+
+;;; === Analysis that is deeper than a simple query ===
+;;; Example of a more complex analysis: finding uncalled functions.
 
 ;; Finds functions that are defined but not called
 ;; by any other analyzed function.
@@ -287,22 +309,25 @@
 ;; TODO: This is a simplified check. It doesn't account for calls via APPLY, funcall,
 ;;       indirect calls, calls from outside the analyzed projects, or entry points.
 (defun uncalled-functions (&optional projects)
-"Identifies functions defined in PROJECTS that do not appear in the :function-calls
+  "Identifies functions defined in PROJECTS that do not appear in the :function-calls
 list of any other definition within the same set of PROJECTS.
 Returns a list of definition plists for such uncalled functions."
-(let ((functions (query-analyzer :all-functions :projects projects)))
-(loop for func-def in functions
-;; Check if this function is called by any other definition.
-unless (query-analyzer
-(make-callers-of-query (getf func-def :name) (getf func-def :package))
-:projects projects)
-collect func-def)))
-|#
+  (let ((functions (query-analyzer :functions :projects projects)))
+    (loop for func-def in functions
+          ;; Check if this function is called by any other definition.
+          unless (query-analyzer
+                  (make-callers-of-query (getf func-def :name) (getf func-def :package))
+                  :projects projects)
+          collect func-def)))
 
+#|
 ;; Example usage comments (kept for context, but should be actual tests or examples elsewhere).
-;; (uncalled-functions '("test-code"))
-;; (uncalled-functions '("insite"))
-;; (query-analyzer :all-functions :projects '("test-code"))
-;; (load-project "test-code")
-;; (break "~S" *universe*)
+
+(uncalled-functions '("test-code"))
+(find-function'("test-code") "TEST-DEFUN-NO-DOCSTRING")
+
+(query-analyzer :all-functions :projects '("test-code"))
+(load-project "test-code")
+(break "~S" *universe*)
+|#
 
