@@ -26,10 +26,12 @@
 (defparameter *form-analyzers* (make-hash-table :test 'equal)
   "A hash table to potentially store custom form analyzer functions. Currently unused.")
 
+(defparameter *export-symbol-standin* nil)
+
 ;; Safely exports a symbol or a compound symbol name (like `(SETF
 ;; FOO)`) into a plist representation `(:name "NAME" :package
 ;; "PACKAGE")`.
-(defun export-symbol (sym &optional (default-package nil))
+(defun export-symbol (sym &optional (default-package *export-symbol-standin*))
   "Serializes SYM into a plist with :name and :package.
    Handles symbols, strings (as names), and compound names like (SETF FOO).
    DEFAULT-PACKAGE is used if SYM is a string or an uninterned/unpackaged symbol.
