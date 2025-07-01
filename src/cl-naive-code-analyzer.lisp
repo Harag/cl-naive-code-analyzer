@@ -174,7 +174,7 @@
   ;; TODO: Implement proper feature expression evaluation if needed
   ;;       for accurate analysis of conditionally compiled code. This
   ;;       might involve querying the current system's features.
-  (format *error-output* "Feature expression: ~S~%" expression)
+  ;; (format *error-output* "Feature expression: ~S~%" expression)
   ;; Default to feature not being present
   nil)
 
@@ -187,7 +187,7 @@
   ;;       critical for analysis.  This can be complex and have side
   ;;       effects. For static analysis, it's often skipped or
   ;;       approximated.
-  (format *error-output* "Read-time eval: ~S~%" expression)
+  ;;(format *error-output* "Read-time eval: ~S~%" expression)
   ;; Return a placeholder indicating it was a read-time eval
   `(:to-expand ,expression))
 

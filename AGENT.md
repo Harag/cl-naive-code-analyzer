@@ -48,7 +48,8 @@ sbcl --noinform --no-userinit --non-interactive \
 		--eval '(push #P"/app/" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
 		--eval '(in-package :cl-naive-code-analyzer.tests)' \
-		--eval '(format t "~S~%" (cl-naive-tests:run))' 	
+		--eval '(cl-naive-tests:run)' \
+ 		--eval '(cl-naive-tests:report)'
 ```
 ## Code Style
 
