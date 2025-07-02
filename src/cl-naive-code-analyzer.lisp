@@ -193,7 +193,7 @@
 
 ;;; Specialized CST classes
 
-(defclass analyzer-cst-mixin (cst)
+(defclass analyzer-cst-mixin ()
   ())
 
 ;;;We need these so we can specialize first and its friends, but that
@@ -214,7 +214,7 @@
 
 (defmethod concrete-syntax-tree:first ((cst analyzer-cons-cst))
   (unless (and (not cst) (concrete-syntax-tree:consp cst))
-    (slot-value cst 'concrete-syntax-tree:first)))
+    (slot-value cst 'concrete-syntax-tree::%first)))
 
 ;;;We are specializing make-expression-result to introduce custom cst
 ;;;classes.
