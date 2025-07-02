@@ -3,6 +3,7 @@
 (defmethod write-analysis :around((a analysis) filename &key)
   (let ((*export-symbol-standin* (analysis-package a)))
     (call-next-method)))
+
 ;;; Default method for WRITE-ANALYSIS. Serializes generic slots common
 ;;; to all analysis types.  Subclasses specialize this method to add
 ;;; slots like docstrings or parameters where applicable.
@@ -46,36 +47,75 @@
         ,@(when (analysis-raw-body a)
             `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
+(defun serialize-specializer (specializer-form)
+  "Serializes a parameter specializer form.
+   Input can be a SYMBOL (class name) or a list like (EQL object)."
+  (cond
+    ;; Class name specializer
+    ((symbolp specializer-form)
+     (export-symbol specializer-form))
+    ;; (EQL object) specializer
+    ((and (consp specializer-form)
+          (eq (first specializer-form) 'eql)
+          (consp (rest specializer-form)) ; Ensure there's a second element
+          (null (cddr specializer-form))) ; Ensure it's exactly (EQL object)
+     (let ((object-to-specialize (second specializer-form)))
+       `(:eql ,(cond
+                 ((symbolp object-to-specialize) (export-symbol object-to-specialize))
+                 ((or (numberp object-to-specialize)
+                      (stringp object-to-specialize)
+                      (characterp object-to-specialize))
+                  object-to-specialize) ; Literals can be used directly
+                 ;; For other complex forms, serialize to string to be safe
+                 (t (format nil "~S" object-to-specialize))))))
+    ;; Unknown or malformed specializer
+    (t
+     `(:unknown-specializer ,(format nil "~S" specializer-form)))))
+
+(defun serialize-param-name-and-specializer (param-name-or-pair)
+  "Serializes a parameter name, which might include a specializer.
+   Input can be a SYMBOL or a list (SYMBOL SPECIALIZER-FORM).
+   Returns a plist (:name <exported-name> :specializer <serialized-specializer>)."
+  (if (consp param-name-or-pair)
+      (let ((name (first param-name-or-pair))
+            (specializer (second param-name-or-pair)))
+        `(:name ,(export-symbol name) :specializer ,(serialize-specializer specializer)))
+      `(:name ,(export-symbol param-name-or-pair) :specializer nil)))
+
 (defun serialize-lambda-list-info (lambda-info)
   (when lambda-info
-    `(:required ,(mapcar #'export-symbol (getf lambda-info :required))
+    `(:required ,(mapcar #'serialize-param-name-and-specializer (getf lambda-info :required))
       :optionals ,(mapcar (lambda (opt)
-                            (list (export-symbol (first opt)) ; name
-                                  (second opt) ; init-form (remains as is)
-                                  ;; supplied-p
-                                  (when (third opt) (export-symbol (third opt)))))
+                            (let* ((name-part (first opt))
+                                   (init-form (second opt))
+                                   (supplied-p (third opt))
+                                   (serialized-name-spec (serialize-param-name-and-specializer name-part)))
+                              ;; Merge the :name and :specializer with other optional parts
+                              `(,@serialized-name-spec
+                                :init-form ,init-form ;; TODO: Serialize init-form? For now, keeping raw.
+                                :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                           (getf lambda-info :optionals))
       :rest ,(when (getf lambda-info :rest)
+               ;; &rest var is just a symbol, no specializer
                (export-symbol (getf lambda-info :rest)))
       :keywords ,(mapcar (lambda (kw)
-
-                           (list
-                            ;; keyword symbol itself (e.g. :foo)
-                            (list (first (first kw))
-                                  ;; var name
-                                  (export-symbol (second (first kw))))
-                            ;; init-form
-                            (second kw)
-                                        ; supplied-p
-                            (when (third kw) (export-symbol (third kw)))))
+                           (let* ((keyword-name (first (first kw))) ; The :keyword itself
+                                  (var-name-part (second (first kw))) ; Var name or (var-name spec)
+                                  (init-form (second kw))
+                                  (supplied-p (third kw))
+                                  (serialized-var-name-spec (serialize-param-name-and-specializer var-name-part)))
+                             `(,@serialized-var-name-spec
+                               :keyword ,keyword-name
+                               :init-form ,init-form ;; TODO: Serialize init-form?
+                               :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                          (getf lambda-info :keywords))
       :allow-other-keys ,(getf lambda-info :allow-other-keys)
       :auxes ,(mapcar (lambda (aux)
-                        (list
-                         ;; name
-                         (export-symbol (first aux))
-                         ;; init-form
-                         (second aux)))
+                        (let ((name (first aux))
+                              (init-form (second aux)))
+                          ;; Aux vars don't have specializers
+                          `(:name ,(export-symbol name)
+                            :init-form ,init-form))) ;; TODO: Serialize init-form?
                       (getf lambda-info :auxes)))))
 
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
@@ -88,49 +128,61 @@
     ,@(when (analysis-lambda-info a)
         `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defmethod-analysis) filename &key)
   "Serializes a 'defmethod-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a)
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
+    ,@(when (analysis-method-qualifier a) ; Use the new singular slot name
+        `(:method-qualifier ,(analysis-method-qualifier a)))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defmacro-analysis) filename &key)
   "Serializes a 'defmacro-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defgeneric-analysis) filename &key)
   "Serializes a 'defgeneric-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defsetf-analysis) filename &key)
   "Serializes a 'defsetf-analysis' object, including parameters (if applicable) and docstring."
-  ;; TODO: Parameters for defsetf need careful handling based on
-  ;; short/long form.
   `(,@(call-next-method)
-    ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+    ,@(when (analysis-lambda-info a) ; For long form
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
+    ,@(when (analysis-store-variables a) ; For long form
+        `(:store-variables ,(mapcar #'export-symbol (analysis-store-variables a))))
+    ,@(when (analysis-parameters a) ; This will be nil for short form, populated for long
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a deftype-analysis) filename &key)
   "Serializes a 'deftype-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
