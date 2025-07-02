@@ -4,25 +4,6 @@
   (let ((*export-symbol-standin* (analysis-package a)))
     (call-next-method)))
 
-(defun serialize-parameter-detail (param-plist)
-  "Serializes a parameter plist (as created by analyzers) into a plist for output."
-  (when param-plist
-    `(:name ,(let ((name (getf param-plist :name)))
-               (if (listp name) ; Handle destructuring in name
-                   (mapcar #'export-symbol name)
-                   (export-symbol name)))
-      :kind ,(getf param-plist :kind)
-      ,@(let ((type-spec (getf param-plist :type-specifier)))
-          (when type-spec
-            `(:type-specifier ,type-spec)))
-      ,@(let ((default-val (getf param-plist :default-value)))
-          ;; Check if default-value key exists, even if nil
-          (when (or default-val (find :default-value param-plist))
-            `(:default-value ,default-val))) ; Keep as s-expression
-      ,@(let ((sv (getf param-plist :supplied-p-variable)))
-          (when sv
-            `(:supplied-p-variable ,(export-symbol sv)))))))
-
 ;;; Default method for WRITE-ANALYSIS. Serializes generic slots common
 ;;; to all analysis types.  Subclasses specialize this method to add
 ;;; slots like docstrings or parameters where applicable.
@@ -66,36 +47,75 @@
         ,@(when (analysis-raw-body a)
             `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
+(defun serialize-specializer (specializer-form)
+  "Serializes a parameter specializer form.
+   Input can be a SYMBOL (class name) or a list like (EQL object)."
+  (cond
+    ;; Class name specializer
+    ((symbolp specializer-form)
+     (export-symbol specializer-form))
+    ;; (EQL object) specializer
+    ((and (consp specializer-form)
+          (eq (first specializer-form) 'eql)
+          (consp (rest specializer-form)) ; Ensure there's a second element
+          (null (cddr specializer-form))) ; Ensure it's exactly (EQL object)
+     (let ((object-to-specialize (second specializer-form)))
+       `(:eql ,(cond
+                 ((symbolp object-to-specialize) (export-symbol object-to-specialize))
+                 ((or (numberp object-to-specialize)
+                      (stringp object-to-specialize)
+                      (characterp object-to-specialize))
+                  object-to-specialize) ; Literals can be used directly
+                 ;; For other complex forms, serialize to string to be safe
+                 (t (format nil "~S" object-to-specialize))))))
+    ;; Unknown or malformed specializer
+    (t
+     `(:unknown-specializer ,(format nil "~S" specializer-form)))))
+
+(defun serialize-param-name-and-specializer (param-name-or-pair)
+  "Serializes a parameter name, which might include a specializer.
+   Input can be a SYMBOL or a list (SYMBOL SPECIALIZER-FORM).
+   Returns a plist (:name <exported-name> :specializer <serialized-specializer>)."
+  (if (consp param-name-or-pair)
+      (let ((name (first param-name-or-pair))
+            (specializer (second param-name-or-pair)))
+        `(:name ,(export-symbol name) :specializer ,(serialize-specializer specializer)))
+      `(:name ,(export-symbol param-name-or-pair) :specializer nil)))
+
 (defun serialize-lambda-list-info (lambda-info)
   (when lambda-info
-    `(:required ,(mapcar #'export-symbol (getf lambda-info :required))
+    `(:required ,(mapcar #'serialize-param-name-and-specializer (getf lambda-info :required))
       :optionals ,(mapcar (lambda (opt)
-                            (list (export-symbol (first opt)) ; name
-                                  (second opt) ; init-form (remains as is)
-                                  ;; supplied-p
-                                  (when (third opt) (export-symbol (third opt)))))
+                            (let* ((name-part (first opt))
+                                   (init-form (second opt))
+                                   (supplied-p (third opt))
+                                   (serialized-name-spec (serialize-param-name-and-specializer name-part)))
+                              ;; Merge the :name and :specializer with other optional parts
+                              `(,@serialized-name-spec
+                                :init-form ,init-form ;; TODO: Serialize init-form? For now, keeping raw.
+                                :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                           (getf lambda-info :optionals))
       :rest ,(when (getf lambda-info :rest)
+               ;; &rest var is just a symbol, no specializer
                (export-symbol (getf lambda-info :rest)))
       :keywords ,(mapcar (lambda (kw)
-
-                           (list
-                            ;; keyword symbol itself (e.g. :foo)
-                            (list (first (first kw))
-                                  ;; var name
-                                  (export-symbol (second (first kw))))
-                            ;; init-form
-                            (second kw)
-                                        ; supplied-p
-                            (when (third kw) (export-symbol (third kw)))))
+                           (let* ((keyword-name (first (first kw))) ; The :keyword itself
+                                  (var-name-part (second (first kw))) ; Var name or (var-name spec)
+                                  (init-form (second kw))
+                                  (supplied-p (third kw))
+                                  (serialized-var-name-spec (serialize-param-name-and-specializer var-name-part)))
+                             `(,@serialized-var-name-spec
+                               :keyword ,keyword-name
+                               :init-form ,init-form ;; TODO: Serialize init-form?
+                               :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                          (getf lambda-info :keywords))
       :allow-other-keys ,(getf lambda-info :allow-other-keys)
       :auxes ,(mapcar (lambda (aux)
-                        (list
-                         ;; name
-                         (export-symbol (first aux))
-                         ;; init-form
-                         (second aux)))
+                        (let ((name (first aux))
+                              (init-form (second aux)))
+                          ;; Aux vars don't have specializers
+                          `(:name ,(export-symbol name)
+                            :init-form ,init-form))) ;; TODO: Serialize init-form?
                       (getf lambda-info :auxes)))))
 
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
