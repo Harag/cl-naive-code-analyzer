@@ -35,6 +35,9 @@
    (parameters :accessor analysis-parameters
                :initform nil
                :documentation "A list of `parameter-detail` structures providing detailed information about each parameter including specializers.")
+   (lambda-info :accessor analysis-lambda-info
+                :initform nil
+                :documentation "Stores the parsed specialized lambda list using alexandria:parse-ordinary-lambda-list.")
    (docstring :accessor analysis-docstring
               :initform nil
               :documentation "The documentation string of the method, if present.")))
@@ -72,7 +75,10 @@
 
 ;;; Analysis class for DEFMACRO forms.
 (defclass defmacro-analysis (analysis)
-  ((parameters :accessor analysis-parameters
+  ((lambda-info :accessor analysis-lambda-info
+                :initform nil
+                :documentation "Stores the parsed lambda list using alexandria:parse-ordinary-lambda-list.")
+   (parameters :accessor analysis-parameters
                :initform nil
                :documentation "A simple list of all parameter names, extracted from the macro's lambda list using the hybrid parsing strategy.")
    (docstring :accessor analysis-docstring
@@ -93,7 +99,10 @@
 
 ;;; Analysis class for DEFTYPE forms.
 (defclass deftype-analysis (analysis)
-  ((parameters :accessor analysis-parameters
+  ((lambda-info :accessor analysis-lambda-info
+                :initform nil
+                :documentation "Stores the parsed lambda list using alexandria:parse-ordinary-lambda-list.")
+   (parameters :accessor analysis-parameters
                :initform nil
                :documentation "A simple list of parameter names, extracted from the type's lambda list.")
    (docstring :accessor analysis-docstring
