@@ -3,6 +3,26 @@
 (defmethod write-analysis :around((a analysis) filename &key)
   (let ((*export-symbol-standin* (analysis-package a)))
     (call-next-method)))
+
+(defun serialize-parameter-detail (param-plist)
+  "Serializes a parameter plist (as created by analyzers) into a plist for output."
+  (when param-plist
+    `(:name ,(let ((name (getf param-plist :name)))
+               (if (listp name) ; Handle destructuring in name
+                   (mapcar #'export-symbol name)
+                   (export-symbol name)))
+      :kind ,(getf param-plist :kind)
+      ,@(let ((type-spec (getf param-plist :type-specifier)))
+          (when type-spec
+            `(:type-specifier ,type-spec)))
+      ,@(let ((default-val (getf param-plist :default-value)))
+          ;; Check if default-value key exists, even if nil
+          (when (or default-val (find :default-value param-plist))
+            `(:default-value ,default-val))) ; Keep as s-expression
+      ,@(let ((sv (getf param-plist :supplied-p-variable)))
+          (when sv
+            `(:supplied-p-variable ,(export-symbol sv)))))))
+
 ;;; Default method for WRITE-ANALYSIS. Serializes generic slots common
 ;;; to all analysis types.  Subclasses specialize this method to add
 ;;; slots like docstrings or parameters where applicable.
@@ -88,49 +108,61 @@
     ,@(when (analysis-lambda-info a)
         `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defmethod-analysis) filename &key)
   "Serializes a 'defmethod-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a)
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
+    ,@(when (analysis-method-qualifier a) ; Use the new singular slot name
+        `(:method-qualifier ,(analysis-method-qualifier a)))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defmacro-analysis) filename &key)
   "Serializes a 'defmacro-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defgeneric-analysis) filename &key)
   "Serializes a 'defgeneric-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a defsetf-analysis) filename &key)
   "Serializes a 'defsetf-analysis' object, including parameters (if applicable) and docstring."
-  ;; TODO: Parameters for defsetf need careful handling based on
-  ;; short/long form.
   `(,@(call-next-method)
-    ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+    ,@(when (analysis-lambda-info a) ; For long form
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
+    ,@(when (analysis-store-variables a) ; For long form
+        `(:store-variables ,(mapcar #'export-symbol (analysis-store-variables a))))
+    ,@(when (analysis-parameters a) ; This will be nil for short form, populated for long
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
 (defmethod write-analysis ((a deftype-analysis) filename &key)
   "Serializes a 'deftype-analysis' object, including parameters and docstring."
   `(,@(call-next-method)
+    ,@(when (analysis-lambda-info a) ; Updated to include lambda-info
+        `(:lambda-info ,(serialize-lambda-list-info (analysis-lambda-info a))))
     ,@(when (analysis-parameters a)
-        `(:parameters ,(mapcar #'export-symbol (analysis-parameters a))))
+        `(:parameters ,(mapcar #'serialize-parameter-detail (analysis-parameters a))))
     ,@(when (analysis-docstring a)
         `(:docstring ,(analysis-docstring a)))))
 
