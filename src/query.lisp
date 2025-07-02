@@ -320,11 +320,129 @@ Returns a list of definition plists for such uncalled functions."
                   :projects projects)
           collect func-def)))
 
+(defun get-direct-function-call-info (project-name function-name-str package-name-str)
+  "Retrieves direct callers and callees for a given function.
+
+Args:
+  project-name (string): The name of the project to query.
+  function-name-str (string): The name of the target function.
+  package-name-str (string): The package name of the target function.
+
+Returns:
+
+A plist with keys :target-function :direct-callers and direct-callees.
+Where available full definitions will be returned so that further
+queries can be applied to the output. Caller/Callee lists will be
+empty if none are found."
+
+  (let* ((target-fn-defs nil)
+         (target-fn-def nil)
+         (direct-callers-defs '())
+         (direct-callees-defs '()))
+
+    ;; Find the target function's definition
+    (format t "[DEBUG] Searching for target function ~A:~A...~%" package-name-str function-name-str)
+
+    (setf target-fn-defs
+          (query-analyzer
+           (lambda (def)
+             (let ((name-info (getf def :name))
+                   (pkg-info (getf def :package)))
+               (and name-info
+                    pkg-info
+                    (string-equal (getf name-info :name) function-name-str)
+                    (string-equal pkg-info package-name-str))))
+           :projects (list project-name)))
+
+    ;;If there are duplicate definitions, the last one read is in
+    ;;theory the one that will be used by lisp so we use that as our
+    ;;definition. query-data returns documents found in reverse order.
+    ;;This is only roughly true in a project because files are read
+    ;;for analysis based on their order in the .asd but asd
+    ;;dependencies could load a file earlier, so if the definitions
+    ;;where in different files and uses file dependancies we could be
+    ;;completely wrong..
+    (setf target-fn-def (car target-fn-defs))
+
+    (format t "[DEBUG] Target function definition found: ~S~%"
+            (if target-fn-def
+                (getf target-fn-def :name)
+                "NIL"))
+
+    (unless target-fn-def
+      ;;We cannot stop if a target definition is not found because we
+      ;;might be interested in a function that is not defined within
+      ;;the project.
+
+      ;; TODO: We should allow passing the definition or the function
+      ;; name. That way when we want to start quering across projects
+      ;; we can get a clearer picture of what is going on and even
+      ;; extend the query into the other project if needed.
+      (format t "Target function definition ~A:~A not found in project ~A"
+              package-name-str function-name-str project-name))
+
+    ;; Find Direct Callers
+    (let ((raw-caller-defs (query-analyzer
+                            (make-callers-of-query function-name-str package-name-str)
+                            :projects (list project-name))))
+
+      (setf direct-callers-defs raw-caller-defs))
+
+    ;; Find Direct Callees
+    (let* ((fn-calls (getf target-fn-def :function-calls))
+           (mc-calls (getf target-fn-def :macro-calls))
+           (all-callee-symbols (append fn-calls mc-calls)))
+
+      (dolist (callee-sym-info all-callee-symbols)
+        (let* ((callee-name (getf callee-sym-info :name))
+               (callee-pkg (getf callee-sym-info :package)))
+
+          (let* ((callee-def-list (query-analyzer
+                                   (lambda (def)
+                                     (let ((name-info (getf def :name))
+                                           (pkg-info (getf def :package)))
+                                       (and name-info pkg-info
+                                            (string-equal (getf name-info :name) callee-name)
+                                            (string-equal pkg-info callee-pkg))))
+                                   :projects (list project-name)))
+                 (callee-def (car callee-def-list)))
+            (if callee-def
+                (pushnew (getf callee-def :code) direct-callees-defs :test #'string=)
+                (pushnew callee-sym-info direct-callees-defs :test #'string=))))))
+
+    (let ((result `(:target-definition
+                    ,target-fn-defs
+                    ,@(when (> (length target-fn-defs) 1)
+                        (list :duplicate-definitions
+                              (cdr target-fn-defs)))
+                    :direct-callers ,direct-callers-defs
+                    :direct-callees ,(reverse direct-callees-defs))))
+      result)))
+
 #|
 ;; Example usage comments (kept for context, but should be actual tests or examples elsewhere).
 
 (uncalled-functions '("test-code"))
 (find-function'("test-code") "TEST-DEFUN-NO-DOCSTRING")
+
+(get-direct-function-call-info "test-code"
+"FUNCTION-USING-MACRO"
+"TEST-PACKAGE-SIMPLE")
+
+(get-direct-function-call-info
+"test-code"
+"ANOTHER-SIMPLE-FUNCTION"
+"TEST-PACKAGE-SIMPLE"))
+
+(get-direct-function-call-info
+"test-code"
+"test-defun-simple"
+"TEST-PACKAGE-SIMPLE")
+
+(get-direct-function-call-info
+"test-code"
+"+"
+"common-lisp")
 
 (query-analyzer :all-functions :projects '("test-code"))
 (load-project "test-code")
