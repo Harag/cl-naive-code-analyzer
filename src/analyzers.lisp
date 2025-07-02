@@ -72,16 +72,24 @@
 
 ;;; Analysis class for DEFMACRO forms.
 (defclass defmacro-analysis (analysis)
-  ((lambda-info :accessor analysis-lambda-info
-                :initform nil
-                :documentation "Stores the parsed deftype lambda list (likely using a macro lambda list parser).")
-   (parameters :accessor analysis-parameters
+  ((parameters :accessor analysis-parameters
                :initform nil
-               :documentation "A list of `parameter-detail` structures providing detailed information about each parameter.")
-
+               :documentation "A simple list of all parameter names, extracted from the macro's lambda list using the hybrid parsing strategy.")
    (docstring :accessor analysis-docstring
               :initform nil
-              :documentation "The documentation string of the macro, if present.")))
+              :documentation "The documentation string of the macro, if present.")
+   (whole-var :accessor analysis-whole-var
+              :initform nil
+              :documentation "Variable for &whole, if present.")
+   (environment-var :accessor analysis-environment-var
+                    :initform nil
+                    :documentation "Variable for &environment, if present.")
+   (body-var :accessor analysis-body-var
+             :initform nil
+             :documentation "Variable for &body or &rest, if present.")
+   (ordinary-lambda-list-details :accessor analysis-ordinary-lambda-list-details
+                                 :initform nil
+                                 :documentation "Stores the parsed details (required, optional, key, aux) of the main segment of the macro lambda list, processed by alexandria:parse-ordinary-lambda-list.")))
 
 ;;; Analysis class for DEFTYPE forms.
 (defclass deftype-analysis (analysis)
@@ -612,6 +620,18 @@ analysis))
    Populates the DEFMACRO-ANALYSIS object."
   ;; TODO: Error handling for malformed DEFMACRO CSTs.
 
+  ;; TODO: Macro lambda lists can be complex
+  ;;       (destructuring). `simple-lambda-params` might be too
+  ;;       simple.  Consider using alexandria:parse-macro-lambda-list
+  ;;       for more detailed parsing if needed.
+  ;;
+  ;; NOTE: Macro lambda lists (which can include &whole, &environment, &body, and complex destructuring)
+  ;;       are processed using a hybrid approach:
+  ;;       1. &whole and &environment are manually extracted.
+  ;;       2. The segment before &body/&rest is parsed using alexandria:parse-ordinary-lambda-list.
+  ;;       3. &body/&rest variable is manually extracted.
+  ;;       This avoids passing macro-specific keywords like &body directly to parse-ordinary-lambda-list,
+  ;;       while still leveraging it for the compatible parts of the lambda list.
   (let* ((name-cst     (concrete-syntax-tree:second cst))
          (args-cst     (concrete-syntax-tree:third cst))
          (possible-doc (concrete-syntax-tree:fourth cst))
@@ -623,101 +643,96 @@ analysis))
                            (concrete-syntax-tree:nthrest 4 cst)
                            (concrete-syntax-tree:nthrest 3 cst)))
          (name         (concrete-syntax-tree:raw name-cst))
-         (raw-lambda-list (and args-cst
-                               (concrete-syntax-tree:consp args-cst)
-                               (mapcar #'concrete-syntax-tree:raw
-                                       (cst:listify args-cst))))
-         ;; Parsed lambda list components for macros
-         (whole nil)
-         (environment nil)
-         (required nil)
-         (optionals nil)
-         (rest-var nil)
+         ;; Start of hybrid parsing logic
+         (raw-ll       (if (and args-cst (concrete-syntax-tree:consp args-cst))
+                           (mapcar #'concrete-syntax-tree:raw (cst:listify args-cst))
+                           nil))
+         (whole-var nil)
+         (env-var nil)
          (body-var nil)
-         (keywords nil)
-         (allow-other-keys-p nil)
-         (auxs nil))
+         (ordinary-segment raw-ll)
+         (processed-params '()))
 
-    (when raw-lambda-list
-      (multiple-value-setq (whole environment required optionals rest-var
-                                  body-var keywords allow-other-keys-p auxs)
-        (alexandria:parse-ordinary-lambda-list
-         raw-lambda-list
-         ;; Standardize lambda list keywords
-         :normalize t
-         ;; For generic function parameter lists (though this is defun)
-         :allow-specializers t
-         ;; Normalize (opt x) to (opt x nil opt-p)
-         :normalize-optional t
-         ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-         :normalize-keyword t
-         ;; Normalize &aux (x y) to &aux (x nil) (y nil)
-         :normalize-auxilary t)))
+    ;; 1. Extract &whole
+    (when (and ordinary-segment (eq (first ordinary-segment) '&whole))
+      (when (cdr ordinary-segment)
+        (setf whole-var (second ordinary-segment))
+        (setf ordinary-segment (cddr ordinary-segment)))
+      #|;; Consider error or warning if &whole is not followed by a variable|#)
+
+    ;; 2. Extract &environment
+    (when (and ordinary-segment (eq (first ordinary-segment) '&environment))
+      (when (cdr ordinary-segment)
+        (setf env-var (second ordinary-segment))
+        (setf ordinary-segment (cddr ordinary-segment)))
+      #| ;; Consider error or warning if &environment is not followed by a variable|#)
+
+    ;; 3. Extract &body (or &rest)
+    (let ((body-keyword-pos (or (position '&body ordinary-segment)
+                                (position '&rest ordinary-segment))))
+      (if body-keyword-pos
+          (progn
+            (when (> (length ordinary-segment) (1+ body-keyword-pos))
+              (setf body-var (nth (1+ body-keyword-pos) ordinary-segment)))
+            ;; Consider error or warning if &body/&rest is not followed by a variable
+            (setf ordinary-segment (subseq ordinary-segment 0 body-keyword-pos)))
+          ;; If no &body/&rest, ordinary-segment remains as is
+          nil))
+
+    ;; 4. Parse the ordinary-segment
+    (setf (analysis-whole-var analysis) whole-var)
+    (setf (analysis-environment-var analysis) env-var)
+    (setf (analysis-body-var analysis) body-var)
+
+    (if ordinary-segment
+        (multiple-value-bind (required optional rest-ord keywords allow-other-keys-p aux)
+            (alexandria:parse-ordinary-lambda-list ordinary-segment
+                                                   :normalize t
+                                                   :allow-specializers t ; Important for destructuring
+                                                   :normalize-optional t
+                                                   :normalize-keyword t
+                                                   :normalize-auxilary t)
+          (setf (analysis-ordinary-lambda-list-details analysis)
+                (list :required required
+                      :optional optional
+                      :rest rest-ord ; rest var within the ordinary segment
+                      :keywords keywords
+                      :allow-other-keys allow-other-keys-p
+                      :aux aux))
+          ;; Populate flat parameter list
+          (when whole-var (push whole-var processed-params))
+          (when env-var (push env-var processed-params))
+          (dolist (p required)
+            (labels (;; Helper to recursively collect symbols from
+                     ;; (potentially destructured) parameters
+                     (collect (item)
+                       (if (consp item)
+                           (dolist (i item) (collect i))
+                           (when (symbolp item) (push item processed-params))))) ; Ensure only symbols are pushed
+              (collect p)))
+          (dolist (o optional) (push (first o) processed-params))
+          (when rest-ord (push rest-ord processed-params))
+          (dolist (k keywords) (push (cadar k) processed-params)) ; var name from ((:keyword var) default suppliedp)
+          (dolist (a aux) (push (first a) processed-params))
+          (when body-var (push body-var processed-params)))
+        ;; No ordinary-segment (e.g. lambda list was only &whole, &env, &body)
+        (progn
+          (setf (analysis-ordinary-lambda-list-details analysis) nil)
+          (when whole-var (push whole-var processed-params))
+          (when env-var (push env-var processed-params))
+          (when body-var (push body-var processed-params))))
 
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
-          (analysis-raw-body analysis) body-cst)
+          (analysis-raw-body analysis) body-cst
+          (analysis-parameters analysis) (nreverse processed-params))
 
-    ;; Store detailed lambda list information
-    (setf (analysis-lambda-info analysis)
-          (list :whole whole :environment environment :required required :optionals optionals
-                :rest rest-var :body body-var :keywords keywords :allow-other-keys allow-other-keys-p :auxs auxs))
-
-    ;; Populate analysis-parameters with detailed structures
-    (let ((detailed-params '()))
-      ;; Helper to add lexical definitions from parameter names (handles destructuring)
-      (labels ((add-lexical-defs (param-name)
-                 (if (consp param-name) ; Destructuring
-                     (dolist (sub-param (alexandria:flatten param-name)) ; Flatten to get all symbols
-                       (when (and (symbolp sub-param) (not (member sub-param lambda-list-keywords)))
-                         (pushnew sub-param (analysis-lexical-definitions analysis) :test #'eq)))
-                     (when (and (symbolp param-name) (not (member param-name lambda-list-keywords)))
-                       (pushnew param-name (analysis-lexical-definitions analysis) :test #'eq)))))
-
-        (when whole
-          (push (list :name whole :kind :whole) detailed-params)
-          (add-lexical-defs whole))
-
-        (when environment
-          (push (list :name environment :kind :environment) detailed-params)
-          (add-lexical-defs environment))
-
-        (dolist (r required)
-          (push (list :name r :kind :required) detailed-params)
-          (add-lexical-defs r))
-
-        (dolist (o optionals) ; (name init suppliedp)
-          (let ((opt-name (first o)) (opt-init (second o)) (opt-sp (third o)))
-            (push (list :name opt-name :kind :optional
-                        :default-value opt-init :supplied-p-variable opt-sp)
-                  detailed-params)
-            (add-lexical-defs opt-name)
-            (when opt-sp (add-lexical-defs opt-sp))))
-
-        (when rest-var
-          ;; If body-var is present, it means &body was used, and rest-var holds the name.
-          ;; If only &rest is used, body-var is nil, and rest-var holds the name.
-          (push (list :name rest-var :kind (if body-var :body :rest)) detailed-params)
-          (add-lexical-defs rest-var))
-
-        (dolist (k keywords) ; ((keyword name) init suppliedp)
-          (let* ((kw-pair (first k))
-                 ;; (kw-keyword (first kw-pair)) ; Not storing the actual keyword for now
-                 (kw-varname (second kw-pair))
-                 (kw-init (second k))
-                 (kw-sp (third k)))
-            (push (list :name kw-varname :kind :key
-                        :default-value kw-init :supplied-p-variable kw-sp)
-                  detailed-params)
-            (add-lexical-defs kw-varname)
-            (when kw-sp (add-lexical-defs kw-sp))))
-
-        (dolist (a auxs) ; (name init)
-          (let ((aux-name (first a)) (aux-init (second a)))
-            (push (list :name aux-name :kind :aux :default-value aux-init)
-                  detailed-params)
-            (add-lexical-defs aux-name))))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
+    ;; Record lexical definitions for all extracted parameters
+    (dolist (p (analysis-parameters analysis))
+      ;; Ensure only symbols are added, as destructuring might have included lists
+      ;; in intermediate steps, though `collect` aims to extract only symbols.
+      (when (symbolp p)
+        (pushnew p (analysis-lexical-definitions analysis) :test #'eq)))
 
     ;; Analyze the macro body
     (when body-cst
