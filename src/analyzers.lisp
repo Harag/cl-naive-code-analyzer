@@ -709,39 +709,99 @@ analysis))
                       :allow-other-keys allow-other-keys-p
                       :aux aux))
           ;; Populate flat parameter list
-          (when whole-var (push whole-var processed-params))
-          (when env-var (push env-var processed-params))
-          (dolist (p required)
-            (labels (;; Helper to recursively collect symbols from
-                     ;; (potentially destructured) parameters
-                     (collect (item)
-                       (if (consp item)
-                           (dolist (i item) (collect i))
-                           (when (symbolp item) (push item processed-params))))) ; Ensure only symbols are pushed
-              (collect p)))
-          (dolist (o optional) (push (first o) processed-params))
-          (when rest-ord (push rest-ord processed-params))
-          (dolist (k keywords) (push (cadar k) processed-params)) ; var name from ((:keyword var) default suppliedp)
-          (dolist (a aux) (push (first a) processed-params))
-          (when body-var (push body-var processed-params)))
+          ;; Populate detailed parameter list (processed-params will store these plists)
+          (when whole-var
+            (push (list :name whole-var :kind :whole) processed-params)
+            (pushnew whole-var (analysis-lexical-definitions analysis) :test #'eq))
+          (when env-var
+            (push (list :name env-var :kind :environment) processed-params)
+            (pushnew env-var (analysis-lexical-definitions analysis) :test #'eq))
+
+          (let ((details (analysis-ordinary-lambda-list-details analysis)))
+            (when details
+              ;; Required parameters (can be destructured)
+              (dolist (r (getf details :required))
+                (labels ((collect-req (item path-acc)
+                           (if (consp item)
+                               ;; Destructuring: item is a list, recurse
+                               (dolist (sub-item item)
+                                 (collect-req sub-item (cons item path-acc)))
+                               ;; Simple symbol
+                               (when (symbolp item)
+                                 (push (list :name item :kind :required
+                                             :destructuring-parent (first path-acc)) ; Store parent if destructured
+                                       processed-params)
+                                 (pushnew item (analysis-lexical-definitions analysis) :test #'eq)))))
+                  (collect-req r nil)))
+
+              ;; Optional parameters: (name init-form supplied-p-name)
+              (dolist (o (getf details :optional))
+                (let ((opt-name (first o))
+                      (opt-init (second o))
+                      (opt-sp (third o)))
+                  (push (list :name opt-name
+                              :kind :optional
+                              :default-value opt-init
+                              :supplied-p-variable opt-sp)
+                        processed-params)
+                  (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
+                  (when opt-sp
+                    (pushnew opt-sp (analysis-lexical-definitions analysis) :test #'eq))))
+
+              ;; Rest parameter (from ordinary segment)
+              (let ((rest-ord-var (getf details :rest)))
+                (when rest-ord-var
+                  (push (list :name rest-ord-var :kind :rest) processed-params)
+                  (pushnew rest-ord-var (analysis-lexical-definitions analysis) :test #'eq)))
+
+              ;; Keyword parameters: ((keyword-name var-name) init-form supplied-p-name)
+              (dolist (k (getf details :keywords))
+                (let* ((kw-pair (first k)) ; ((:keyword varname) ...)
+                       (kw-varname (second kw-pair)) ; varname
+                       (kw-init (second k))
+                       (kw-sp (third k)))
+                  (push (list :name kw-varname
+                              :kind :key
+                              ;; :keyword (first kw-pair) ; Store the actual keyword like :FOO
+                              :default-value kw-init
+                              :supplied-p-variable kw-sp)
+                        processed-params)
+                  (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
+                  (when kw-sp
+                    (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
+
+              ;; Aux variables: (name init-form)
+              (dolist (a (getf details :aux))
+                (let ((aux-name (first a))
+                      (aux-init (second a)))
+                  (push (list :name aux-name
+                              :kind :aux
+                              :default-value aux-init)
+                        processed-params)
+                  (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq))))))
         ;; No ordinary-segment (e.g. lambda list was only &whole, &env, &body)
-        (progn
-          (setf (analysis-ordinary-lambda-list-details analysis) nil)
-          (when whole-var (push whole-var processed-params))
-          (when env-var (push env-var processed-params))
-          (when body-var (push body-var processed-params))))
+        ;; &whole and &env already handled. Now handle &body if it was standalone.
+        (when (and (not ordinary-segment) body-var) ; Check if body-var exists and wasn't part of ordinary
+          (push (list :name body-var :kind :body) processed-params)
+          (pushnew body-var (analysis-lexical-definitions analysis) :test #'eq)))
+
+    ;; If &body was part of the main lambda list (not via ordinary segment)
+    ;; This covers cases where &body might be the only thing after &whole/&env
+    ;; or if ordinary-segment was nil.
+    (when (and body-var (not (member body-var (mapcar #'(lambda (p) (getf p :name)) processed-params) :test #'eq)))
+      (push (list :name body-var :kind :body) processed-params)
+      (pushnew body-var (analysis-lexical-definitions analysis) :test #'eq))
 
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis) body-cst
           (analysis-parameters analysis) (nreverse processed-params))
 
-    ;; Record lexical definitions for all extracted parameters
-    (dolist (p (analysis-parameters analysis))
-      ;; Ensure only symbols are added, as destructuring might have included lists
-      ;; in intermediate steps, though `collect` aims to extract only symbols.
-      (when (symbolp p)
-        (pushnew p (analysis-lexical-definitions analysis) :test #'eq)))
+    ;; Lexical definitions are already populated during parameter processing.
+    ;; No need for the separate loop over (analysis-parameters analysis) if :name is correctly extracted.
+    ;; (dolist (p (analysis-parameters analysis))
+    ;;   (when (symbolp (getf p :name)) ; Assuming :name holds the symbol
+    ;;     (pushnew (getf p :name) (analysis-lexical-definitions analysis) :test #'eq)))
 
     ;; Analyze the macro body
     (when body-cst
