@@ -47,6 +47,40 @@
         ,@(when (analysis-raw-body a)
             `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
+(defun serialize-parameter-detail (param-detail)
+  "Serializes a parameter-detail plist for storage."
+  (let ((name (getf param-detail :name))
+        (kind (getf param-detail :kind))
+        (default-value (getf param-detail :default-value))
+        (supplied-p-var (getf param-detail :supplied-p-variable))
+        (type-spec (getf param-detail :type-specifier))
+        (keyword (getf param-detail :keyword)))
+    (append
+     (list :name (if (consp name) ; Handle destructured names (raw list)
+                     (format nil "~S" name)
+                     (export-symbol name)))
+     (list :kind kind)
+     (when (or default-value (eq kind :optional) (eq kind :key)) ; explicit nil for default is valid
+       (list :default-value (if (or (symbolp default-value) (consp default-value))
+                                (format nil "~S" default-value)
+                                default-value)))
+     (when supplied-p-var
+       (list :supplied-p-variable (export-symbol supplied-p-var)))
+     (when type-spec
+       (list :type-specifier (if (or (symbolp type-spec) (consp type-spec))
+                                 (format nil "~S" type-spec)
+                                 type-spec)))
+     (when keyword
+       (list :keyword keyword))
+     ;; Include other potential keys if necessary, like :destructured, :sub-parameters
+     ;; For now, focusing on what Alexandria provided for basic compatibility in writers.
+     ;; The full :sub-parameters structure might be too verbose for this serialization.
+     (when (getf param-detail :destructured)
+       (list :destructured t
+             #|
+             ;; Optionally, a string representation of sub-parameters if needed
+             ;; :sub-parameters (format nil "~S" (getf param-detail :sub-parameters))))))|#)))))
+
 (defun serialize-specializer (specializer-form)
   "Serializes a parameter specializer form.
    Input can be a SYMBOL (class name) or a list like (EQL object)."

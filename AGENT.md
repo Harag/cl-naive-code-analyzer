@@ -136,7 +136,7 @@ sbcl --noinform --no-userinit --non-interactive \
 		--eval '(push #P"/app/" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer)' \
 		--eval '(in-package :cl-naive-code-analyzer)' \
-		--eval '[code to run goes here. )]]))))'
+		--eval '[code to run goes here. )]))))'
 ```
 
 Remember you have to output information you want with something like 

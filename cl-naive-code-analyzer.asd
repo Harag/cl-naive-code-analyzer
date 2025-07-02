@@ -15,10 +15,12 @@
   :components ((:file "src/package")
                (:file "src/utils"
                 :depends-on ("src/package"))
+               (:file "src/lambda-list-parser"
+                :depends-on ("src/utils"))
                (:file "src/naive-store"
                 :depends-on ("src/utils"))
                (:file "src/analyzers"
-                :depends-on ("src/utils"))
+                :depends-on ("src/utils" "src/lambda-list-parser"))
                (:file "src/cl-naive-code-analyzer"
                 :depends-on ("src/naive-store"))
                (:file "src/writers"
