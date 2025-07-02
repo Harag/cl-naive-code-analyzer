@@ -121,3 +121,46 @@ These are in no particular order.
    have good reasons but then you have to articulate: a. Old VS New
    b. Impact on the rest of the project code because we want to stay
    consistant.
+
+## Exploration
+
+To explore stuff or to test individual functions without having to go
+through a whole test cycle use the following command template.
+
+
+```
+sbcl --noinform --no-userinit --non-interactive \
+		--eval '(load #P"~/quicklisp/setup.lisp")' \
+		--eval '(push "~/source/" ql:*local-project-directories*)' \
+		--eval '(push "/app/" ql:*local-project-directories*)' \
+		--eval '(push #P"/app/" asdf:*central-registry*)' \
+		--eval '(ql:quickload :cl-naive-code-analyzer)' \
+		--eval '(in-package :cl-naive-code-analyzer)' \
+		--eval '[code to run goes here. )]]))))'
+```
+
+Remember you have to output information you want with something like 
+```(format t "Info: ~S~%" [thing])```
+
+Also remember if it is a large code block you are inserting you do not have to worry about using \ command continuation because the code block is inbetween '...'.
+
+For example:
+
+```
+sbcl --noinform --no-userinit --non-interactive \
+	--eval '(load #P"~/quicklisp/setup.lisp")' \
+	--eval '(push "~/source/" ql:*local-project-directories*)' \
+	--eval '(push "/app/" ql:*local-project-directories*)' \
+	--eval '(push #P"/app/" asdf:*central-registry*)' \
+	--eval '(ql:quickload :cl-naive-code-analyzer)' \
+	--eval '(let ((cst (cl-naive-code-analyzer::analyze-string
+            "(defun simple (a &key (b (+ 1 1)))
+\"A simple function with no arguments and a docstring.\"
+(list 1 2 3))")))
+  (cl-naive-code-analyzer::walk-cst-with-context
+   cst
+   (lambda (current-cst path tail)
+     (declare (ignore path tail))
+     (format nil "~S~%" cst))))' 
+```
+	
