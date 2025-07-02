@@ -104,3 +104,20 @@ These are in no particular order.
    cl-naive-code-analyzer.tests package so that comparisons of print
    output have the same package prefixes. The test command does this
    correctly.
+
+## When introducing new functions
+
+1. When it is a helper/utility function check if some thing similar
+   has not been implemented already!
+2. Check to see how the same thing is possibly being achieved
+   elsewhere in the code.
+   
+## When changing existing functions.
+
+1. Check to see if something similar has not done in the project code
+   before and grok how those examples actually tell you about the
+   project design and conventions.
+2. It is ok to want to change project design and conventions when you
+   have good reasons but then you have to articulate: a. Old VS New
+   b. Impact on the rest of the project code because we want to stay
+   consistant.
