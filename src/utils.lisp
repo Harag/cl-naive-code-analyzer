@@ -304,3 +304,4 @@
 ;; TODO: Implement if needed, though typically not for basic file reading.
 (defmethod trivial-gray-streams:stream-clear-input ((stream tracking-stream))
   nil)
+
