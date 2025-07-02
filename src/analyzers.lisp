@@ -706,29 +706,12 @@
 (defmethod analyze-cst (cst (analysis defparameter-analysis))
   "Analyzes a DEFPARAMETER/DEFVAR/DEFCONSTANT CST to extract name, initial value, and docstring.
    Populates the DEFPARAMETER-ANALYSIS object."
-  ;; TODO: Distinguish between defparameter, defvar, defconstant if
-  ;;       needed (currently uses analysis-kind set by :around).  The
-  ;;       :around method sets it to 'defparameter, 'defvar, or
-  ;;       'defconstant based on the cst head.
-  ;;reak "~S" (length (concrete-syntax-tree:raw  cst)))
   (let* ((name-cst (concrete-syntax-tree:second cst))
          (init-cst (concrete-syntax-tree:third cst))
-         ;;Make sure there is documentation before trying to get to
-         ;;it. This was the simplest check, trying to check it through
-         ;;the actual cst you would have to walk through the rests to
-         ;;check. You cant use fourth because if it does not exist it
-         ;;crashes. You can also not grap third and check for rest
-         ;;because third = (fort (nth 2 cst)) which means you cant get
-         ;;to the rest!
-         (doc (when (= (length (concrete-syntax-tree:raw  cst))
-                       4)
-                (concrete-syntax-tree:raw (concrete-syntax-tree:fourth cst))))
+         (doc (concrete-syntax-tree:raw (concrete-syntax-tree:fourth cst)))
          (name (concrete-syntax-tree:raw name-cst)))
 
     (setf (analysis-name analysis) name
-          ;; Kind is set by :around method, e.g. 'defparameter,
-          ;; 'defvar, 'defconstant (analysis-kind analysis) ; No need
-          ;; to set it here, already set.
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis) init-cst)
     ;; Analyze the initial value form if present
