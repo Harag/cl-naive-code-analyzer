@@ -845,29 +845,6 @@ like function calls or variable uses."
     ;; If options need deeper analysis (beyond docstring), a walk could be added here.
     analysis))
 
-;;; Specialized method for ANALYZE-CST for DEFPARAMETER, DEFVAR,
-;;; DEFCONSTANT forms.
-(defmethod analyze-cst (cst (analysis defparameter-analysis))
-  "Analyzes a DEFPARAMETER/DEFVAR/DEFCONSTANT CST to extract name, initial value, and docstring.
-   Populates the DEFPARAMETER-ANALYSIS object."
-  (let* ((name-cst (concrete-syntax-tree:second cst))
-         (init-cst (concrete-syntax-tree:third cst))
-         (doc (and (concrete-syntax-tree:fourth cst)
-                   (concrete-syntax-tree:raw (concrete-syntax-tree:fourth cst))))
-         (name (concrete-syntax-tree:raw name-cst)))
-
-    (setf (analysis-name analysis) name
-          (analysis-docstring analysis) doc
-          (analysis-raw-body analysis) init-cst)
-    ;; Analyze the initial value form if present
-    (when init-cst
-      (walk-cst-with-context
-       init-cst
-       (lambda (current-init-cst path tail)
-         (declare (ignore path tail))
-         (gather-info current-init-cst analysis))))
-    analysis))
-
 (defmethod analyze-cst (cst (analysis defsetf-analysis))
   "Analyzes a DEFSETF CST. Extracts name, docstring, parameters (long form), store variables, and body (long form).
    Populates the DEFSETF-ANALYSIS object."
