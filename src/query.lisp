@@ -372,12 +372,12 @@ empty if none are found."
                (callee-pkg (getf callee-sym-info :package)))
           (let* ((callee-def-list (query-analyzer
                                    (lambda (def)
-                                     (let ((name-info (getf def :name))
-                                           (pkg-info (getf def :package)))
-                                       (and name-info pkg-info
-                                            (string-equal (getf name-info :name)
+                                     (let ((name (getf (getf def :name) :name))
+                                           (pkg (getf (getf def :name) :package)))
+                                       (and name pkg
+                                            (string-equal name
                                                           callee-name)
-                                            (string-equal pkg-info callee-pkg))))
+                                            (string-equal pkg callee-pkg))))
                                    :projects (list project-name)))
                  (callee-def (car callee-def-list)))
             (if callee-def
