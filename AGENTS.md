@@ -2,13 +2,31 @@
 
 ## Environment
 
+This section outlines the development environment setup, primarily for
+AI agents like Jules.
+
 ### Jules
 
-#### Project Source Path 
+#### Project Source Path
 
-/app/
+The primary source code for this project within the agent's
+environment is located at:
+
+`/app/`
+
+This path should be used when commands or configurations require a
+reference to the project's root directory (e.g., in ASDF central
+registry pushes or when specifying paths for analysis tools).
 
 #### Initialization Script
+
+The following script is executed to set up the necessary Common Lisp
+environment. It includes:
+- Installation of SBCL (Steel Bank Common Lisp), a high-performance
+  Common Lisp implementation.
+- Installation of Quicklisp, a library manager for Common Lisp.
+- Configuration of Quicklisp to find local project dependencies.
+- Cloning of essential local dependencies from GitLab.
 
 ```
 # Install ubuntu packages that are needed to setup enfironment.
@@ -61,33 +79,50 @@ git clone https://[token]@gitlab.com/naive-x/sandbox.git
 
 ## Plans and/or Suggestions
 
-Give me detail!
+Crafting a good plan is crucial for efficient collaboration. Please
+provide detailed, step-by-step plans.
 
-This is an excelent example of a detailed plan. Please just make a mental note of the level of detail but dont go and store this example plan in memory because then you are going to accidentally internalize irrellevant details contained in it which will confuse you later.
+**Key Characteristics of a Good Plan:**
 
+1.  **Clear Steps:** Break down the task into logical, numbered steps.
+2.  **Sufficient Detail:** For each step, explain *what* needs to be
+    done and *how*. Mention specific files, functions, or tools if
+    applicable.
+3.  **Assumptions:** If your plan relies on certain assumptions, state them.
+4.  **Verification:** Include steps for testing or verifying the changes.
+5.  **Tool Usage:** Briefly mention which tools you anticipate using for each step (e.g., `read_files`, `replace_with_git_merge_diff`, `run_in_bash_session`).
+
+**Example of Desired Detail Level (General):**
+
+Instead of: "Fix the bug in `utils.lisp`."
+
+Prefer:
 ```
-Here's a proposed plan:
-
-Modify analyze-cst methods for relevant definition types (e.g., defun-analysis, defmacro-analysis, defmethod-analysis, deftype-analysis, defgeneric-analysis, defsetf-analysis long form):
-
-After parse-lambda-list-cst is called and the lambda list details (including :default-value-cst for optionals, keys, aux, and potentially sub-parameters for destructuring) are available:
-Iterate through these parameters.
-For each parameter that has a default value represented by a CST, or for each component of a destructuring pattern that is itself a lambda list:
-Call walk-cst-with-context (or a similar appropriate walker) on that CST, passing the main analysis object so that gather-info populates its function-calls, macro-calls, variable-uses, etc., slots with findings from within these default values/destructured parts.
-Adjust the write-analysis methods for these definition types (or how lambda-info is prepared for writing):
-
-When serializing the analysis-lambda-info slot (or the parameters slot that's derived from it) to the log file:
-Ensure that the actual default value expressions (which were originally CSTs) are now converted to strings using (format nil "~S" (concrete-syntax-tree:raw THE_DEFAULT_VALUE_CST)) before being written.
-This means the log will store a string representation of the default value, while the queryable details (calls, uses) from within it will have been merged into the main analysis object's collections.
-Test:
-
-Re-run the analysis: sbcl --noinform --non-interactive --load /home/jules/quicklisp/setup.lisp --eval '(push #p"./" ql:*local-project-directories*)' --eval '(ql:quickload :cl-naive-code-analyzer)' --eval '(cl-naive-code-analyzer:analyze-project "test-code" "tests/test-code/")'
-Verify that the analysis completes without the malformed property list error from cl-naive-store (as the problematic forms should now be strings).
-Inspect the code-definitions.log to confirm:
-Default values like (* TEST-PACKAGE-SIMPLE::X 2) are now stored as strings (e.g., "(* TEST-PACKAGE-SIMPLE::X 2)").
-Function calls/variable uses from within these default values (e.g., the * function call) are correctly listed in the main :function-calls property of the defun's analysis entry.
-Does this plan accurately reflect the agreed-upon Path A and cover the necessary steps?
+1. *Analyze the bug report and reproduce the issue.*
+    - Read the bug description in issue #123.
+    - Examine `utils.lisp` using `read_files` to understand the `calculate-score` function.
+    - If necessary, use the "Exploration" command to run parts of the function with sample inputs.
+2. *Identify the root cause.*
+    - Based on the analysis, pinpoint the exact line(s) causing the incorrect score calculation.
+3. *Implement the fix in `utils.lisp`.*
+    - Use `replace_with_git_merge_diff` to modify the `calculate-score` function.
+    - The fix will involve correcting the off-by-one error in the loop.
+4. *Add a new test case in `tests/test-utils.lisp`.*
+    - Use `replace_with_git_merge_diff` or `create_file_with_block` (if the test file needs significant additions).
+    - The new test should specifically cover the scenario that caused bug #123.
+5. *Run all tests.*
+    - Use the "TEST COMMAND" provided in this document, adapting it for the `cl-naive-utils` project.
+    - Ensure all tests, including the new one, pass.
+6. *Submit the changes.*
+    - Use `submit` with a clear commit message like "Fix: Correct off-by-one error in calculate-score."
 ```
+
+**Regarding the previous example plan provided (for `analyze-cst`):**
+That plan was an excellent example of the level of detail
+required. The key is to break down the problem into manageable parts
+and explain the approach for each, including how to verify the
+solution. Please continue to provide plans with that level of
+thoroughness.
 
 ## Project 
 
@@ -98,6 +133,8 @@ cl-naive-code-analyzer
 ### NAIVE Philosophy
 
 https://gitlab.com/naive-x/_naive_/-/blob/main/readme.org
+
+If you cannot access this let me know!
 
 ### Summary
 
@@ -134,13 +171,13 @@ This includes design decisions and other notes to help grok the code.
    are sturctured. Each analyzer must just extract what it needs based
    on how concrete-syntac-tree cst's work. In testing code
    specifically we need to be careful that we dont test cst structure
-   because that will only confuse us and the tests.
+   because that will only confuse us and the tests. The `raw-body` slot
+   should generally be treated as read-only after initial parsing,
+   as modifications to it might not be reflected in the CST or other
+   analysis artifacts.
 
 3. Testing code some times uses analyze-string which is a poor version
    analyze-project. Don't try and use it except for testing.
-
-
-
 
 ## Contributing Guidlines
 
@@ -151,7 +188,6 @@ This includes design decisions and other notes to help grok the code.
 
 2. If you have a fix for an issue and you found similiar issues in the
    code suggest fixing those as well.
-
 
 ### When changing existing functions.
 
@@ -181,24 +217,34 @@ This includes design decisions and other notes to help grok the code.
 2. Keep track of what is going on in the project don't suggest new
    helpers that does what other helpers already do.
 
-
-## Tests 
+## Tests
 
 ### TEST COMMAND
 
-This is an command template to run the tests for the project.  
-- The command stats SBCL with quicklisp loaded. 
-- Then it tells quicklisp and the asdf system where to find dependencies.
-- Then it loads the test project.
-- Then it executes the tests 
-- Finally it reports the test results
+This is a command template to run the tests for the project.
+- The command starts SBCL with Quicklisp loaded.
+- Then it tells Quicklisp and ASDF (Another System Definition
+  Facility) where to find local dependencies.
+- Then it loads the test system for the project (e.g., `cl-naive-code-analyzer.tests`).
+- Then it executes the tests using `cl-naive-tests:run`.
+- Finally, it reports the test results using `cl-naive-tests:report`.
+
+**Note on `[project source path]`:** This placeholder refers to the
+root directory of the project being tested. In the context of the
+agent's environment, this is `/app/` (see "Environment" section). If
+testing a different project (e.g., one of the dependencies), adjust
+this path. For example, for `cl-naive-store`, it might be
+`~/dependencies-source/cl-naive-store/`.  The
+`asdf:*central-registry*` push should be a pathname designator, so
+ensure it's like `#P"/app/"` or
+`#P"~/dependencies-source/cl-naive-store/"`.
 
 ```
 sbcl --noinform --no-userinit --non-interactive \
 		--eval '(load #P"~/quicklisp/setup.lisp")' \
 		--eval '(push "~/dependencies-source/" ql:*local-project-directories*)' \
 		--eval '(push "[project source path]" ql:*local-project-directories*)' \
-		--eval '(push #P"[project source path" asdf:*central-registry*)' \
+		--eval '(push #P"[project source path]" asdf:*central-registry*)' \
 		--eval '(ql:quickload :cl-naive-code-analyzer.tests)' \
 		--eval '(in-package :cl-naive-code-analyzer.tests)' \
 		--eval '(cl-naive-tests:run)' \
@@ -207,61 +253,76 @@ sbcl --noinform --no-userinit --non-interactive \
 
 ### Test Code
 
-1. Testing code should use :: for symbols not exported, we dont want
-   to export symbols purely for testing purposes.
+1. Testing code should use `::` for symbols not exported (internal
+   symbols). We avoid exporting symbols purely for testing purposes to
+   maintain a clean public API.
 
-2. Testing code written should be run from within the
-   cl-naive-code-analyzer.tests package so that comparisons of print
-   output have the same package prefixes. The test command template does this
-   correctly.
-   
-## Exploration
+2. Testing code written should be run from within the project's test
+   package (e.g., `cl-naive-code-analyzer.tests`). This ensures that
+   comparisons of print output have consistent package prefixes. The
+   test command template handles this with the `(in-package ...)`
+   form.
 
-We are working with Common Lisp, a large part of its power is the use
-of the REPL.
+## Exploration (REPL Approximation)
 
-Since the AI cannot access the REPL with out assistance the best we can do is to run individual lisp SEXP's one at the time in an approximation of a REPL.
+Common Lisp development heavily relies on the interactive
+Read-Eval-Print Loop (REPL). While direct REPL access isn't available
+to the agent, we can approximate it by executing individual Lisp
+S-expressions (SEXP) using SBCL from the command line.
 
-To explore stuff or to test individual functions without having to go
-through a whole test cycle use the following command template.
+This is useful for:
+- Testing small code snippets.
+- Inspecting the state of variables or data structures.
+- Understanding the behavior of specific functions without a full test
+  cycle.
+
+Use the following command template:
 
 ```
 sbcl --noinform --no-userinit --non-interactive \
 		--eval '(load #P"~/quicklisp/setup.lisp")' \
-		--eval '(push "~/source/" ql:*local-project-directories*)' \
-		--eval '(push "/app/" ql:*local-project-directories*)' \
-		--eval '(push #P"/app/" asdf:*central-registry*)' \
-		--eval '(ql:quickload :cl-naive-code-analyzer)' \
-		--eval '(in-package :cl-naive-code-analyzer)' \
-		--eval '[code to run goes here. )]))))'
+		--eval '(push "~/dependencies-source/" ql:*local-project-directories*)' \
+		--eval '(push "[project source path]" ql:*local-project-directories*)' \
+		--eval '(push #P"[project source path]" asdf:*central-registry*)' \
+		--eval '(ql:quickload :[system-to-load])' \ ;; e.g., :cl-naive-code-analyzer
+		--eval '(in-package :[package-to-use])' \ ;; e.g., :cl-naive-code-analyzer
+		--eval ''[code to run goes here. Ensure it is a single string argument, properly quoted. Example: (format t "Hello: ~S~%" (my-function 1 2))]''
 ```
 
-Remember you have to output information you want with something like 
+**Key points for the exploration command:**
+- **`[project source path]`**: Typically `/app/` for the main project,
+  or a path under `~/dependencies-source/` for dependencies. Ensure
+  the ASDF path is a pathname designator like `#P"/app/"`.
+- **`:[system-to-load]`**: The ASDF system you need to load (e.g.,
+  `:cl-naive-code-analyzer`, `:cl-naive-store`).
+- **`:[package-to-use]`**: The package your code snippet should run in
+  (e.g., `:cl-naive-code-analyzer`, `:cl-user`).
+- **`'[code to run goes here...]'`**:
+    - This entire SEXP must be passed as a *single string argument* to
+      the `--eval` option.
+    - Use `(format t "Info: ~S~%" [thing-to-print])` or similar to
+      output results, as standard REPL output is not captured.
+    - Ensure proper Lisp syntax, including matching parentheses. The
+      `)]))))` in the original template was a placeholder; your actual
+      code will determine the necessary parentheses.
+    - For multi-line code blocks passed as a single string, you don't
+      need shell line continuation characters (`\`).
+    - Remember to escape characters within the Lisp string as needed
+      for the shell, e.g., `\"` for double quotes.
 
-```(format t "Info: ~S~%" [thing])```
-
-Also remember if it is a large code block you are inserting you do not have to worry about using \ command continuation because the code block is in between '...'.
-
-For example:
+**Example:**
 
 ```
 sbcl --noinform --no-userinit --non-interactive \
 	--eval '(load #P"~/quicklisp/setup.lisp")' \
-	--eval '(push "~/source/" ql:*local-project-directories*)' \
+	--eval '(push "~/dependencies-source/" ql:*local-project-directories*)' \
 	--eval '(push "/app/" ql:*local-project-directories*)' \
 	--eval '(push #P"/app/" asdf:*central-registry*)' \
 	--eval '(ql:quickload :cl-naive-code-analyzer)' \
-	--eval '(let ((cst (cl-naive-code-analyzer::analyze-string
-            "(defun simple (a &key (b (+ 1 1)))
-\"A simple function with no arguments and a docstring.\"
-(list 1 2 3))")))
-  (cl-naive-code-analyzer::walk-cst-with-context
-   cst
-   (lambda (current-cst path tail)
-     (declare (ignore path tail))
-     (format nil "~S~%" cst))))' 
+	--eval '(in-package :cl-naive-code-analyzer)' \
+	--eval '(let ((cst (cl-naive-code-analyzer::analyze-string "(defun simple (a &key (b (+ 1 1))) \\"A simple function with no arguments and a docstring.\\" (list 1 2 3))"))) (format t "CST Info: ~S~%" (cl-naive-code-analyzer::walk-cst-with-context cst (lambda (current-cst path tail) (declare (ignore path tail)) (format nil "~S" current-cst)))))'
 ```
-	
+
 ## Code Conventions
 
 ### KISS
@@ -283,7 +344,10 @@ Instructions about how and when to make comments.
 2. Do not put comments when the code is clear on its own already. For
    example ```(if (not x) 1 2)``` ;Checks if x is nil.
 
-3. Do not put any comments before a ) even if its on a seperate line like below. My emacs configuration rolls up dangling ), which means if there is a preceding comment the ) becomes commented out.
+3. Do not put any comments before a ) even if its on a seperate line
+   like below. My emacs configuration rolls up dangling ), which means
+   if there is a preceding comment the ) becomes commented out.
+
 ```
 ;;coment
 )
@@ -300,16 +364,179 @@ Instructions about how and when to make comments.
 
 3. Don't excede 80 chars on a line.That counts for comments as well!
 
-4. When defining class slots use constistent order of options ([slot name] [initarg] [accessor] [iniform] [documentation])
+4. When defining class slots use constistent order of options ([slot
+   name] :initarg [initarg] :accessor [accessor] :initform [initform]
+   :documentation "[documentation string]")
 
-5. Format slots like the following:
+5. Format class slots as follows for readability. Each slot option
+   should be on a new line, indented.
 
+   **Example Class Definition:**
+   ```common-lisp
+   (defclass my-class ()
+     ((first-slot :initarg :first-slot
+                  :accessor first-slot
+                  :initform nil
+                  :documentation "This is the first slot.")
+      (second-slot :initarg :second-slot
+                   :accessor second-slot
+                   :initform (list 1 2 3)
+                   :documentation "This is the second slot, initialized with a list.")))
+   ```
+
+6. Do not block format code with excessive whitespace padding for
+   alignment, e.g., avoid `(name (concrete-syntax-tree:raw name-cst))`
+   if `(name (concrete-syntax-tree:raw name-cst))` is clear. The
+   primary goal is readability and consistency, not strict column
+   alignment if it makes diffs harder to read.
+
+
+## Documentation and Examples
+
+Good documentation and illustrative examples are highly valued. Please
+ensure your contributions in this area align with the practices found
+in other NAIVE projects (located in `~/dependencies-source`).
+
+Key characteristics to aim for:
+- **Docstrings:** All public functions, macros, classes, and variables
+  should have clear and concise docstrings. Explain *what* the code
+  does, its parameters, and what it returns. For complex functions,
+  also explain the *why* or the algorithm if it's non-obvious.
+- **Runnable Examples:** Where appropriate, include small, runnable
+  examples within dedicated example files.
+- **READMEs:** For larger features or modules, consider if updates to
+  the project's README or other markdown documentation files are
+  necessary.
+- **Clarity and Conciseness:** Strive for clarity and avoid jargon
+  where simpler terms suffice.
+
+For instance, refer to the `cl-naive-store` project's `store.lisp`
+file for examples of detailed docstrings and class definitions, or its
+README for project-level documentation. If unsure, ask for a specific
+example to emulate.
+
+## Version Control
+
+### Branching
+
+- **Feature Branches:** Create branches for new features, preferably
+  prefixed with `feature/` (e.g., `feature/new-parser`).
+- **Bugfix Branches:** For bug fixes, use `bugfix/` (e.g.,
+  `bugfix/issue-123-fix-off-by-one`).
+- **Jules' Branches:** Your branches can be prefixed with `jules/`
+  (e.g., `jules/refactor-utility-module`).
+- Base your branches off the main development branch (e.g., `main` or
+  `master`). Please ask if you are unsure which branch this is.
+
+### Commit Messages
+
+Please follow these guidelines for commit messages, based on Conventional Commits:
+1.  **Format:** `<type>[optional scope]: <description>`
+    *   `<type>`: Must be one of the following:
+        *   `feat`: A new feature.
+        *   `fix`: A bug fix.
+        *   `docs`: Documentation only changes.
+        *   `style`: Changes that do not affect the meaning of the
+            code (white-space, formatting, missing semi-colons, etc).
+        *   `refactor`: A code change that neither fixes a bug nor adds a feature.
+        *   `perf`: A code change that improves performance.
+        *   `test`: Adding missing tests or correcting existing tests.
+        *   `build`: Changes that affect the build system or external
+            dependencies (example scopes: gulp, broccoli, npm).
+        *   `ci`: Changes to our CI configuration files and scripts
+            (example scopes: Travis, Circle, BrowserStack, SauceLabs).
+        *   `chore`: Other changes that don't modify src or test files.
+    *   `[optional scope]`: A noun describing the section of the
+        codebase affected (e.g., `parser`, `analyzer`, `tests`).
+    *   `<description>`: Concise description of the change in present
+        tense. Not capitalized. No period at the end.
+2.  **Subject Line Length:** Keep the subject line to 50 characters or
+    less if possible, but clarity is more important than strict
+    length.
+3.  **Body (Optional but Recommended):**
+    *   A blank line separates the subject from the body.
+    *   Explain the *what* and *why* of the change, not just the *how*
+        (the code shows how).
+    *   Wrap lines at 72 characters.
+    *   Reference issues if applicable (e.g., `Closes #123`, `Fixes #456`).
+    *   `BREAKING CHANGE`: If the commit introduces a breaking API
+        change, start the body with `BREAKING CHANGE:` followed by a
+        description of the change, justification, and migration notes.
+
+**Example Commit Message (Simple):**
 ```
- ([slot name] :initarg [initarg] 
-              :accessor [accessor] 
-			  :initform [iniform] 
-			  :documentation 
-			  [documentation])
+feat(parser): add support for new syntax element
 ```
 
-6. Do not block format code with whitespace padding like this ``` (name         (concrete-syntax-tree:raw name-cst))```
+**Example Commit Message (Detailed):**
+```
+fix(analyzer): correct off-by-one error in token processing
+
+The previous logic for iterating over tokens could miss the last
+token in certain edge cases. This commit adjusts the loop
+boundary to ensure all tokens are processed.
+
+Closes #789
+```
+
+**Example Commit Message (Breaking Change):**
+```
+refactor(api): rename process-data to handle-input-stream
+
+BREAKING CHANGE: The function `process-data` has been renamed to
+`handle-input-stream` to better reflect its purpose. Additionally,
+the parameter order has changed from `(data options)` to
+`(options data-stream)`.
+
+To migrate, update all calls to the old function name and adjust
+parameter order.
+```
+
+## Interaction and Error Handling
+
+This section provides general guidelines for interaction and error
+handling during development. Specific tool examples may be provided
+for AI agents like Jules.
+
+### Communication
+- **Clarifications:** If a request is ambiguous or if you're unsure
+  about the best approach, please ask for clarification before
+  proceeding with extensive work. For AI agents, this might involve
+  using a tool like `request_user_input`.
+- **Updates:** Provide brief updates when you complete significant
+  parts of a plan or if you encounter an unexpected blocker. For AI
+  agents, tools like `message_user` or `plan_step_complete` can be
+  used for this.
+- **Suggestions:** Feel free to suggest alternative approaches or
+  improvements if you see opportunities. Articulate these clearly.
+
+### Error Handling (in Lisp Code)
+- Strive to write robust code that anticipates potential issues.
+- Use Common Lisp's condition system for signaling errors and warnings
+  where appropriate.
+- For this project, if you encounter a situation where user input is
+  invalid or an operation cannot proceed as expected, it's generally
+  preferred to:
+    1. Signal a continuable error (`cerror`) if the situation might be
+       resolvable by a handler.
+    2. Signal a specific custom condition (derived from `error` or
+       `warning`) if one is defined or appropriate for that type of
+       issue.
+    3. Signal a standard error (e.g., `error 'type-error
+       :expected-type 'integer :datum some-value)`) if applicable.
+- Avoid silent failures or returning `nil` ambiguously where an error
+  condition is more appropriate.
+- If unsure about the specific error handling strategy for a new piece
+  of code, please ask.
+
+### Tool or Environment Errors
+- If a tool command (e.g., `run_in_bash_session`,
+  `replace_with_git_merge_diff`) fails, please report the full error
+  message and the command you attempted.
+- If you suspect an environment issue (e.g., a dependency not
+  loading), describe the symptoms clearly and any steps you've taken
+  to diagnose it.
+- Before reporting, if it's a simple issue like a typo in a command
+  you constructed, please try to correct it first. If an error
+  persists, provide the original command, the corrected one, and the
+  resulting error.
