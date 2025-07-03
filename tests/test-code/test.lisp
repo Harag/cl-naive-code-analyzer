@@ -130,8 +130,8 @@
 (defun test-defun-uses-macro-with-body ()
   "A function that uses test-defmacro-with-body."
   (test-defmacro-with-body my-var
-                           (print "First body form")
-                           (print "Second body form")))
+    (print "First body form")
+    (print "Second body form")))
 
 ;;;;----------------------------------------------------------------------------
 ;;;; DEFCLASS
@@ -313,6 +313,31 @@
 (defun test-defun-unused ()
   "This function is defined but not called within this test file."
   "unused result")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Test code for lexical vs function call identification bug
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defpackage :cl-naive-code-analyzer-test-lexical
+  (:use #:cl #:cl-naive-code-analyzer)
+  (:export #:test-lexical-shadowing #:my-var #:run-lexical-tests)) ; Added run-lexical-tests for potential direct test execution
+(in-package :cl-naive-code-analyzer-test-lexical)
+
+;; Global function that clashes with a parameter name
+(defun my-var (x)
+  "Global function my-var"
+  (* x 2))
+
+(defun test-lexical-shadowing (my-var items)
+  "Test function where 'my-var' is a parameter shadowing a global function.
+   'my-var' parameter is expected to be a list here."
+  ;; 'my-var' here refers to the parameter (a list of items).
+  ;; This use of 'my-var' as an argument to mapcar should be recognized as a lexical variable.
+  (mapcar #'print my-var)
+
+  ;; This is a call to the global 'my-var' function defined above.
+  ;; This should be recorded in :function-calls.
+  (let ((processed-item (my-var 10))) ; Call to global my-var
+    (list items processed-item (my-var items)))) ; Call to global my-var with items list.
 
 ;;;;----------------------------------------------------------------------------
 ;;;; Examples from original file that might need specific testing or verification
