@@ -47,6 +47,40 @@
         ,@(when (analysis-raw-body a)
             `(:raw-body ,(format nil "~S" (real-raw (analysis-raw-body a))))))))
 
+(defun serialize-parameter-detail (param-detail)
+  "Serializes a parameter-detail plist for storage."
+  (let ((name (getf param-detail :name))
+        (kind (getf param-detail :kind))
+        (default-value (getf param-detail :default-value))
+        (supplied-p-var (getf param-detail :supplied-p-variable))
+        (type-spec (getf param-detail :type-specifier))
+        (keyword (getf param-detail :keyword)))
+    (append
+     (list :name (if (consp name) ; Handle destructured names (raw list)
+                     (format nil "~S" name)
+                     (export-symbol name)))
+     (list :kind kind)
+     (when (or default-value (eq kind :optional) (eq kind :key)) ; explicit nil for default is valid
+       (list :default-value (if (or (symbolp default-value) (consp default-value))
+                                (format nil "~S" default-value)
+                                default-value)))
+     (when supplied-p-var
+       (list :supplied-p-variable (export-symbol supplied-p-var)))
+     (when type-spec
+       (list :type-specifier (if (or (symbolp type-spec) (consp type-spec))
+                                 (format nil "~S" type-spec)
+                                 type-spec)))
+     (when keyword
+       (list :keyword keyword))
+     ;; Include other potential keys if necessary, like :destructured, :sub-parameters
+     ;; For now, focusing on what Alexandria provided for basic compatibility in writers.
+     ;; The full :sub-parameters structure might be too verbose for this serialization.
+     (when (getf param-detail :destructured)
+       (list :destructured t
+             #|
+             ;; Optionally, a string representation of sub-parameters if needed
+             ;; :sub-parameters (format nil "~S" (getf param-detail :sub-parameters))))))|#)))))
+
 (defun serialize-specializer (specializer-form)
   "Serializes a parameter specializer form.
    Input can be a SYMBOL (class name) or a list like (EQL object)."
@@ -92,7 +126,9 @@
                                    (serialized-name-spec (serialize-param-name-and-specializer name-part)))
                               ;; Merge the :name and :specializer with other optional parts
                               `(,@serialized-name-spec
-                                :init-form ,init-form ;; TODO: Serialize init-form? For now, keeping raw.
+                                :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                                (format nil "~S" init-form)
+                                                init-form)
                                 :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                           (getf lambda-info :optionals))
       :rest ,(when (getf lambda-info :rest)
@@ -106,7 +142,9 @@
                                   (serialized-var-name-spec (serialize-param-name-and-specializer var-name-part)))
                              `(,@serialized-var-name-spec
                                :keyword ,keyword-name
-                               :init-form ,init-form ;; TODO: Serialize init-form?
+                               :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                               (format nil "~S" init-form)
+                                               init-form)
                                :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                          (getf lambda-info :keywords))
       :allow-other-keys ,(getf lambda-info :allow-other-keys)
@@ -115,7 +153,9 @@
                               (init-form (second aux)))
                           ;; Aux vars don't have specializers
                           `(:name ,(export-symbol name)
-                            :init-form ,init-form))) ;; TODO: Serialize init-form?
+                            :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                            (format nil "~S" init-form)
+                                            init-form))))
                       (getf lambda-info :auxes)))))
 
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
