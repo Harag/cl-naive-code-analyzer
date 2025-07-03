@@ -31,59 +31,6 @@
 ;; It attempts to load store and collection definitions from disk if
 ;; not already in memory.
 
-(defun load-project (project)
-  "Initializes or loads the necessary store and collection for the given PROJECT name.
-   Returns the 'code-definitions' collection for the project.
-   Assumes project data has already been indexed and stored."
-  (let ((store nil) ; Renamed to avoid conflict with cl-naive-store:store class
-        (collection nil))
-    ;; Ensure multiverse and universe are initialized (uses global
-    ;; *multiverse* and *universe*)
-    (unless *multiverse*
-      (setf *multiverse*
-            (make-instance
-             'multiverse
-             :name *multiverse-name*
-             ;; TODO: Make configurable
-             :location (multiverse-location)
-             :universe-class 'cl-naive-store:universe)))
-    (unless *universe*
-      (setf *universe*
-            (add-multiverse-element
-             *multiverse*
-             (make-instance
-              'cl-naive-store:universe
-              :name *universe-name*
-              :multiverse *multiverse*
-              ;; TODO: Make configurable
-              :location (universe-location)))))
-
-    ;; Get or load the project-specific store
-    (setf store (cl-naive-store:get-multiverse-element
-                 :store *universe* project))
-    (unless store
-      (setf store (cl-naive-store:load-from-definition-file
-                   *universe*
-                   :store
-                   project)))
-
-    ;; Get or load the 'code-definitions' collection from the store
-    (when store
-      (setf collection (cl-naive-store:get-multiverse-element
-                        :collection store *collection-name*))
-
-      (unless collection
-        (setf collection (cl-naive-store:load-from-definition-file
-                          store
-                          *collection-name*
-                          :collection
-                          :with-data-p t))))
-    ;; Return the collection, or ERROR if store/collection couldn't be
-    ;; loaded/found.
-    (if (cl-naive-store:documents collection)
-        collection
-        (error "Project definitions not found."))))
-
 ;; Macro to define and register a named query.
 ;; NAME is a keyword, and LAMBDA is the query function.
 (defmacro defquery (name lambda)
@@ -96,110 +43,79 @@
 ;; Retrieves project store objects.
 
 ;; If PROJECTS (a list of project names) is provided, it
-;; gets/initializes stores for those.
-
-;; Otherwise, it returns all stores in the current *universe*.
-(defun get-project-stores (&optional projects)
+;; gets/initializes stores for those. Otherwise, it returns all
+;; stores in the current *universe*.
+(defun get-project-collections (&optional projects)
   "Retrieves store objects for the specified PROJECTS (list of names).
    If PROJECTS is NIL, returns all stores in the current *universe*.
    Uses `init-project` to ensure stores are loaded if not already in memory."
-  ;; TODO: `init-project` returns a collection, not a store. This
-  ;;       needs correction.  It should probably call
-  ;;       `cl-naive-store:get-multiverse-element` for the store, and
-  ;;       `init-project` might be misnamed or misused here if the
-  ;;       goal is to get store objects.  Assuming `init-project` is
-  ;;       intended to ensure the project's data is loaded and returns
-  ;;       the collection, this function needs to be rethought if it's
-  ;;       meant to return *store* objects.  For now, proceeding with
-  ;;       the assumption that it aims to get collections via
-  ;;       init-project.
   (if projects
       (loop for project-name in projects
+            for collection = (load-project project-name)
+            when collection
             collect
-            ;; This part is problematic: init-project returns a
-            ;; collection.  We need the store object itself if the
-            ;; goal is to iterate stores.  Correcting to get the
-            ;; store, then ensure its collection is loaded.
-            (let ((store-obj (cl-naive-store:get-multiverse-element
-                              :store
-                              *universe* project-name)))
-              (unless store-obj
-                ;; If store isn't even in memory, `init-project` might
-                ;; try to load its definition. However,
-                ;; `init-project` as written is more about loading the
-                ;; *collection*. This logic needs to be robust for
-                ;; cases where store definition exists but not
-                ;; collection.
-                (init-project project-name)
-                (setf store-obj
-                      (cl-naive-store:get-multiverse-element
-                       :store
-                       *universe* project-name)))
-              (unless
-                  (cl-naive-store:get-multiverse-element
-                   store-obj
-                   "code-definitions"
-                                        ; Get all store objects directly
+            collection)
+      (progn
+        (load-naive-store)
+        (loop for store in (cl-naive-store:STores *universe*)
+              for collection =  (cl-naive-store:get-multiverse-element
+                                 :collection store
+                                 *collection-name*)
+              when collection
+              collect
+              collection))))
 
-                   ;; Main function to query stored analysis data.  Allows specifying
-                   ;; projects, a query function/keyword, sorting, filtering, and
-                   ;; limiting results.
-                   (defun query-analyzer (query &key projects sort filter limit)
-                     "Run QUERY over stored analysis data across specified PROJECTS.
+;; Main function to query stored analysis data.  Allows specifying
+;; projects, a query function/keyword, sorting, filtering, and
+;; limiting results
+(defun query-analyzer (query &key projects sort filter limit)
+  "Run QUERY over stored analysis data across specified PROJECTS.
    QUERY can be a keyword (for a registered query) or a lambda function.
    FILTER is a predicate (keyword or lambda) to further narrow results.
    SORT is a key function for sorting results.
    LIMIT restricts the number of results returned."
-                     ;; TODO: Improve error message for invalid query/filter types.
+  ;; TODO: Improve error message for invalid query/filter types.
 
-                     ;; TODO: Ensure `get-project-stores` correctly
-                     ;; returns a list of store objects.
-                     (let* ((stores (get-project-stores projects))
-                            (final-query
-                              (cond ((functionp query) query)
-                                    ((keywordp query)
-                                     (gethash query *registered-queries*))
-                                    (t (error "Invalid query type: ~A. Must be a function or registered keyword."
-                                              query))))
-                            (results
-                              (loop for store in stores
-                                    when store
-                                    append
-                                    (let ((collection
-                                            (cl-naive-store:get-multiverse-element
-                                             :collection
-                                             store "code-definitions")))
-                                      (when collection
-                                        (cl-naive-store:query-data
-                                         collection
-                                         :query
-                                         (lambda (doc)
-                                           (funcall final-query doc)))))))
-                            (processed-results results))
+  (let* ((collections (get-project-collections projects))
+         (final-query
+           (cond ((functionp query) query)
+                 ((keywordp query)
+                  (gethash query *registered-queries*))
+                 (t (error "Invalid query type: ~A. Must be a function or registered keyword."
+                           query))))
+         (results
+           (loop for collection in collections
+                 append
+                 (cl-naive-store:query-data
+                  collection
+                  :query
+                  (lambda (doc)
+                    (funcall final-query doc)))))
+         (processed-results results))
 
-                       ;; Apply sorting if specified
-                       (when sort
-                         (setf processed-results
-                               (sort processed-results #'< :key sort)))
+    ;; Apply sorting if specified
+    (when sort
+      (setf processed-results
+            (sort processed-results #'< :key sort)))
 
-                       ;; Apply filtering if specified
-                       (when filter
-                         (let ((filter-fn
-                                 (cond ((functionp filter)
-                                        filter)
-                                       ((keywordp filter)
-                                        (gethash filter *registered-queries*))
-                                       (t (error "Invalid filter type: ~A. Must be a function or registered keyword." filter)))))
-                           (setf processed-results
-                                 (remove-if-not filter-fn processed-results))))
+    ;; Apply filtering if specified
+    (when filter
+      (let ((filter-fn
+              (cond ((functionp filter)
+                     filter)
+                    ((keywordp filter)
+                     (gethash filter *registered-queries*))
+                    (t (error "Invalid filter type: ~A. Must be a function or registered keyword." filter)))))
+        (setf processed-results
+              (remove-if-not filter-fn processed-results))))
 
-                       ;; Apply limit if specified
-                       (when limit
-                         (setf processed-results
-                               (subseq processed-results
-                                       0
-                                       (min limit (length processed-results)))))
-                       processed-results))))))))
+    ;; Apply limit if specified
+    (when limit
+      (setf processed-results
+            (subseq processed-results
+                    0
+                    (min limit (length processed-results)))))
+    processed-results))
 
 ;; Helper function to find a symbol (represented as
 ;; a plist with :name and :package) within a list
@@ -280,13 +196,41 @@
                           kind-val)
                       "defmacro"))))
 
-(defun query-analyzer (query &key projects)
-  (loop for project in projects
-        for collection = (load-project project)
-        when collection
-        append (cl-naive-store:query-data
-                collection
-                :query (or (gethash query *registered-queries*) query))))
+;; Query to find all class definitions.
+(defquery :classes
+    (lambda (definition)
+      (let ((kind-val (getf definition :kind)))
+        (string-equal (if (consp kind-val) (getf kind-val :name) kind-val)
+                      "DEFCLASS"))))
+
+;; Query to find all variable definitions.
+(defquery :variables
+    (lambda (definition)
+      (let ((kind-val (getf definition :kind)))
+        (member (if (consp kind-val) (getf kind-val :name) kind-val)
+                '("DEFPARAMETER" "DEFVAR" "DEFCONSTANT")
+                :test #'string-equal))))
+
+;; Query to find all generic function definitions.
+(defquery :generic-functions
+    (lambda (definition)
+      (let ((kind-val (getf definition :kind)))
+        (string-equal (if (consp kind-val) (getf kind-val :name) kind-val)
+                      "DEFGENERIC"))))
+
+;; Query to find all type definitions.
+(defquery :types
+    (lambda (definition)
+      (let ((kind-val (getf definition :kind)))
+        (string-equal (if (consp kind-val) (getf kind-val :name) kind-val)
+                      "DEFTYPE"))))
+
+;; Query to find all condition definitions.
+(defquery :conditions
+    (lambda (definition)
+      (let ((kind-val (getf definition :kind)))
+        (string-equal (if (consp kind-val) (getf kind-val :name) kind-val)
+                      "DEFINE-CONDITION"))))
 
 (defun find-function (projects function-name)
   (query-analyzer
@@ -306,8 +250,37 @@
 ;; Finds functions that are defined but not called
 ;; by any other analyzed function.
 
-;; TODO: This is a simplified check. It doesn't account for calls via APPLY, funcall,
-;;       indirect calls, calls from outside the analyzed projects, or entry points.
+(defun is-function-exported-p (func-def projects)
+  "Checks if the function defined by FUNC-DEF is exported from its package.
+   FUNC-DEF is a plist representing a function definition.
+   PROJECTS is a list of project names to search for the package definition."
+  (let* ((func-name-str (getf func-def :name))
+         (func-package-str (getf func-def :package))
+         (package-defs (query-analyzer
+                        (lambda (def)
+                          (let ((kind-name (getf (getf def :kind) :name))
+                                (def-name (getf def :name)))
+                            ;; Ensure :kind is a plist with :name, and def :name is also present
+                            (and kind-name def-name
+                                 (string-equal kind-name "DEFPACKAGE")
+                                 (string-equal def-name func-package-str))))
+                        :projects projects)))
+    ;; Assuming there's at most one defpackage form for a given package name in the analyzed projects.
+    (when package-defs
+      (let* ((package-def (car package-defs))
+             (exports (getf package-def :exports)))
+        (member func-name-str exports :test #'string-equal)))))
+
+;; TODO: This is a simplified check. It doesn't account for calls via
+;;       APPLY, funcall, indirect calls, calls from outside the
+;;       analyzed projects, or entry points.
+;;       Future enhancements could involve:
+;;       - Allowing users to specify known entry points.
+;;       - Analyzing symbol references in data structures or dynamic calls.
+;;       - Building a more comprehensive call graph.
+;;       - Deal with uncalled functions that are exported becuase in
+;;         essence they might never be called in their own project.
+
 (defun uncalled-functions (&optional projects)
   "Identifies functions defined in PROJECTS that do not appear in the :function-calls
 list of any other definition within the same set of PROJECTS.
@@ -419,10 +392,66 @@ empty if none are found."
                     :direct-callees ,(reverse direct-callees-defs))))
       result)))
 
+(defun find-definitions-without-docstrings (&key projects types)
+  "Finds definitions of specified TYPES within PROJECTS that are missing docstrings.
+   TYPES is a list of keywords identifying definition types (e.g., :functions, :macros, :classes).
+   If TYPES is NIL, it defaults to checking common definition types like
+   :functions, :macros, :classes, :variables, :generic-functions, :types, :conditions.
+   Returns a list of definition plists that lack a non-empty docstring."
+  (let* ((default-types '(:functions :macros :classes :variables
+                          :generic-functions :types :conditions))
+         (final-types (if types types default-types))
+         (definitions-without-docs nil))
+
+    (dolist (type final-types (nreverse definitions-without-docs))
+      (let* ((query-target
+               (typecase type
+                 (keyword (or (gethash type *registered-queries*)
+                              ;; Handle types for which defqueries will be added in the next step
+                              (cond
+                                ((eq type :classes)
+                                 (lambda (def)
+                                   (string-equal (getf (getf def :kind) :name)
+                                                 "DEFCLASS")))
+                                ((eq type :variables)
+                                 (lambda (def)
+                                   (member (getf (getf def :kind) :name)
+                                           '("DEFPARAMETER" "DEFVAR" "DEFCONSTANT")
+                                           :test #'string-equal)))
+                                ((eq type :generic-functions)
+                                 (lambda (def)
+                                   (string-equal (getf (getf def :kind)
+                                                       :name)
+                                                 "DEFGENERIC")))
+                                ((eq type :types)
+                                 (lambda (def)
+                                   (string-equal (getf (getf def :kind) :name)
+                                                 "DEFTYPE")))
+                                ((eq type :conditions)
+                                 (lambda (def)
+                                   (string-equal (getf (getf def :kind) :name)
+                                                 "DEFINE-CONDITION")))
+                                (t
+                                 (warn "No registered query or specific handler for type ~S in find-definitions-without-docstrings." type)
+                                 nil))))
+                 (function type) ; If type is a function, use it directly
+                 (t (warn "Invalid type specifier for find-definitions-without-docstrings: ~S" type)
+                  nil))))
+
+        (when query-target
+          (let ((definitions (query-analyzer query-target :projects projects)))
+            (dolist (def definitions)
+              (let ((docstring (getf def :docstring)))
+                (when (or (null docstring) (string= docstring ""))
+                  (push def definitions-without-docs))))))))))
+
 #|
 ;; Example usage comments (kept for context, but should be actual tests or examples elsewhere).
 
 (uncalled-functions '("test-code"))
+
+(uncalled-functions '("xdb2"))
+
 (find-function'("test-code") "TEST-DEFUN-NO-DOCSTRING")
 
 (get-direct-function-call-info "test-code"
@@ -443,6 +472,8 @@ empty if none are found."
 "test-code"
 "+"
 "common-lisp")
+
+(find-definitions-without-docstrings :projects '("test-code"))
 
 (query-analyzer :all-functions :projects '("test-code"))
 (load-project "test-code")
