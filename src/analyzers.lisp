@@ -440,10 +440,7 @@ like function calls or variable uses."
                          (step-cst head-cst
                                    (if head
                                        (append path (list head))
-                                       path))))
-                     ;; At the end of this branch (or if rem becomes
-                     ;; an atom or circular)
-                     (return))))
+                                       path)))))))
       (step-cst cst nil)
       ;; Return diagnostic information about the walk
       (values (hash-table-count table)
