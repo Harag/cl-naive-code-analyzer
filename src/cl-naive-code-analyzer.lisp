@@ -94,23 +94,7 @@
 ;;; Custom Eclector client to hook into the reading process. Used to
 ;;; capture CSTs and their positions, and manage package context.
 (defclass analyzer-client (eclector.concrete-syntax-tree:cst-client)
-  (;; TODO: This slot seems unused. Verify and remove if so.
-   (forms :initform '()
-          :accessor client-forms
-          :documentation "Accumulated forms (CSTs) read by the client. Potentially redundant if analyses are built directly.")
-   (form-positions :initform (make-hash-table :test 'eq)
-                   ;; TODO: This slot seems unused. Verify and remove.
-                   :accessor client-form-positions
-                   :documentation "A hash table mapping CSTs to their start/end positions. Potentially redundant.")
-   ;; TODO: This slot seems unused. Verify and remove.
-   (current-position :initform nil
-                     :accessor client-current-position
-                     :documentation "The starting position of the current form being parsed.")
-   ;; TODO: This slot seems unused. Verify and remove.
-   (last-position :initform nil
-                  :accessor client-last-position
-                  :documentation "The ending position of the last form parsed.")
-   (package :accessor client-package
+  ((package :accessor client-package
             :initarg :package
             :initform (find-package :cl)
             :documentation "The current package context for the reader.")))
@@ -402,11 +386,6 @@
                  ;;       purpose.
                  (setf (analysis-package analysis) (client-package client))
                  (setf (analysis-cst analysis) cst)
-
-                 ;; These client slots seem for a different purpose,
-                 ;; perhaps originally for make-expression-result.
-                 ;; (setf (client-current-position client) start)
-                 ;; (setf (client-last-position client) end)
 
                  (push analysis analyses))))
         ;; Return analyses in the order they appeared in the file

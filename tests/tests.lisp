@@ -37,8 +37,8 @@
      :define-symbol-macro-sexp
      :equal #'equalp
      :expected '(:NAME (:NAME "MY-SYM-MACRO" :PACKAGE "COMMON-LISP-USER")
-                 :PACKAGE
-                 "COMMON-LISP-USER" :FILENAME NIL
+                 :PACKAGE "COMMON-LISP-USER"
+                 :FILENAME NIL
                  :KIND (:NAME "DEFINE-SYMBOL-MACRO" :PACKAGE "COMMON-LISP")
                  :LINE 1 :START 0 :END 48
                  :CODE "(DEFINE-SYMBOL-MACRO COMMON-LISP-USER::MY-SYM-MACRO
@@ -46,8 +46,8 @@
                  :FUNCTION-CALLS NIL
                  :MACRO-CALLS NIL
                  :VARIABLE-USES NIL
-                 :LEXICAL-DEFINITIONS
-                 NIL :DYNAMIC-DEFINITIONS NIL
+                 :LEXICAL-DEFINITIONS NIL
+                 :DYNAMIC-DEFINITIONS NIL
                  :RAW-BODY "COMMON-LISP-USER::*SOME-GLOBAL*")
      :equal #'equalp
      :actual (let* ((analysis (get-first-analysis code)))
@@ -101,8 +101,7 @@
      :defun-sexp
      :equal #'equalp
      :expected '(:NAME (:NAME "TEST-DEFUN-SIMPLE" :PACKAGE "COMMON-LISP-USER")
-                 :PACKAGE
-                 "COMMON-LISP-USER"
+                 :PACKAGE "COMMON-LISP-USER"
                  :FILENAME NIL
                  :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP")
                  :LINE 1 :START 0 :END 150
@@ -116,11 +115,8 @@
                  :DYNAMIC-DEFINITIONS NIL
                  :RAW-BODY
                  "(LIST 1 2 3)"
-                 :LAMBDA-INFO
-                 (:REQUIRED NIL :OPTIONALS NIL :REST NIL
-                  :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL
-                  :AUXES NIL)
-                 :DOCSTRING "A simple function with no arguments and a docstring.")
+                 :DOCSTRING
+                 "A simple function with no arguments and a docstring.")
 
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
@@ -156,11 +152,19 @@
     ;; Note: simple-lambda-params extracts (X Y)
     (cl-naive-tests:testcase
      :defmethod-parameters
-     :expected '(common-lisp-user::x common-lisp-user::y)
+     :expected '((:NAME COMMON-LISP-USER::X :KIND :REQUIRED :TYPE-SPECIFIER INTEGER)
+                 (:NAME COMMON-LISP-USER::Y :KIND :OPTIONAL :DEFAULT-VALUE 10
+                  :SUPPLIED-P-VARIABLE NIL))
      :actual (let* ((analysis (get-first-analysis
                                code
-                               :package (find-package :cl-user))))
-               (analysis-parameters analysis)))
+                               :package (find-package :cl-user)))
+                    (parameters (analysis-parameters analysis)))
+
+               (remf (car parameters) :type-specifier-cst)
+               (remf (second parameters) :default-value-cst)
+               (remf (second parameters) :supplied-p-variable-cst)
+
+               parameters))
 
     (cl-naive-tests:testcase
      :defmethod-sexp
@@ -181,11 +185,31 @@
                  :LEXICAL-DEFINITIONS
                  ((:NAME "Y" :PACKAGE "COMMON-LISP-USER")
                   (:NAME "X" :PACKAGE "COMMON-LISP-USER"))
-                 :DYNAMIC-DEFINITIONS NIL :RAW-BODY
+                 :DYNAMIC-DEFINITIONS NIL
+                 :RAW-BODY
                  "(+ COMMON-LISP-USER::X COMMON-LISP-USER::Y)"
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "X" :PACKAGE "COMMON-LISP-USER")))
+                  :OPTIONALS
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER NIL
+                    :INIT-FORM "COMMON-LISP-USER::Y"
+                    :SUPPLIED-P-VAR (:NAME "KIND" :PACKAGE "KEYWORD")))
+                  :REST NIL
+                  :KEYWORDS NIL
+                  :ALLOW-OTHER-KEYS NIL
+                  :AUXES NIL)
                  :PARAMETERS
-                 ((:NAME "X" :PACKAGE "COMMON-LISP-USER")
-                  (:NAME "Y" :PACKAGE "COMMON-LISP-USER"))
+                 ((:NAME (:NAME "X" :PACKAGE "COMMON-LISP-USER")
+                   :KIND :REQUIRED
+                   :TYPE-SPECIFIER "INTEGER")
+                  (:NAME (:NAME "Y" :PACKAGE "COMMON-LISP-USER")
+                   :KIND :OPTIONAL
+                   :DEFAULT-VALUE
+                   10))
                  :DOCSTRING "A test method.")
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
@@ -296,8 +320,10 @@
 
     (cl-naive-tests:testcase
      :deftype-parameters
-     :expected '(common-lisp-user::val)
-     :actual (let* ((analysis (get-first-analysis code :package (find-package :cl-user))))
+     :expected '((:NAME COMMON-LISP-USER::VAL :KIND :REQUIRED))
+     :actual (let* ((analysis (get-first-analysis
+                               code
+                               :package (find-package :cl-user))))
                (analysis-parameters analysis)))
 
     ;; TODO: Body of deftype is not analyzed for calls in the same way as defun
@@ -308,8 +334,7 @@
                  :PACKAGE "COMMON-LISP-USER"
                  :FILENAME NIL
                  :KIND (:NAME "DEFTYPE" :PACKAGE "COMMON-LISP")
-                 :LINE 1 :START 0 :END 102
-                 :CODE
+                 :LINE 1 :START 0 :END 102 :CODE
                  "(DEFTYPE COMMON-LISP-USER::MY-INTEGER-TYPE (COMMON-LISP-USER::VAL)
   \"A custom integer type.\"
   (CL-NAIVE-CODE-ANALYZER::QUASIQUOTE
@@ -322,7 +347,19 @@
                  :DYNAMIC-DEFINITIONS NIL
                  :RAW-BODY "(ECLECTOR.READER:QUASIQUOTE
  (INTEGER 0 (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::VAL)))"
-                 :PARAMETERS ((:NAME "VAL" :PACKAGE "COMMON-LISP-USER"))
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "VAL" :PACKAGE "COMMON-LISP-USER")))
+                  :OPTIONALS NIL
+                  :REST NIL
+                  :KEYWORDS NIL
+                  :ALLOW-OTHER-KEYS NIL
+                  :AUXES NIL)
+                 :PARAMETERS
+                 ((:NAME (:NAME "VAL" :PACKAGE "COMMON-LISP-USER")
+                   :KIND :REQUIRED))
                  :DOCSTRING
                  "A custom integer type.")
      :actual (let* ((analysis (get-first-analysis code)))
@@ -360,9 +397,17 @@
     (cl-naive-tests:testcase
      :defgeneric-parameters
      ;; simple-lambda-params extracts required and &key names
-     :expected '(common-lisp-user::arg1 common-lisp-user::arg2)
-     :actual (let* ((analysis (get-first-analysis code :package (find-package :cl-user))))
-               (sort (copy-list (analysis-parameters analysis)) #'string< :key #'symbol-name)))
+     :expected '((:NAME COMMON-LISP-USER::ARG1 :KIND :REQUIRED)
+                 (:NAME COMMON-LISP-USER::ARG2 :KIND :KEY
+                  :KEYWORD :ARG2
+                  :DEFAULT-VALUE NIL
+                  :SUPPLIED-P-VARIABLE NIL))
+     :actual (let* ((analysis (get-first-analysis
+                               code
+                               :package (find-package :cl-user))))
+               (sort (copy-list (analysis-parameters analysis)) #'string<
+                     :key #'(lambda (par)
+                              (getf par :name)))))
 
     ;; TODO: Defgeneric options/methods are not deeply analyzed by default for calls
     ;; TODO: Defgeneric does not have a direct 'raw-body' like defun
@@ -388,9 +433,24 @@
                  :LEXICAL-DEFINITIONS
                  ((:NAME "ARG2" :PACKAGE "COMMON-LISP-USER")
                   (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER"))
-                 :DYNAMIC-DEFINITIONS NIL :PARAMETERS
-                 ((:NAME "ARG1" :PACKAGE "COMMON-LISP-USER")
-                  (:NAME "ARG2" :PACKAGE "COMMON-LISP-USER"))
+                 :DYNAMIC-DEFINITIONS NIL
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER")))
+                  :OPTIONALS NIL
+                  :REST NIL
+                  :KEYWORDS NIL
+                  :ALLOW-OTHER-KEYS NIL
+                  :AUXES NIL)
+                 :PARAMETERS
+                 ((:NAME (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER")
+                   :KIND :REQUIRED)
+                  (:NAME (:NAME "ARG2" :PACKAGE "COMMON-LISP-USER")
+                   :KIND :KEY
+                   :DEFAULT-VALUE "NIL"
+                   :KEYWORD :ARG2))
                  :DOCSTRING "A test generic function.")
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
@@ -501,8 +561,7 @@
                  :PACKAGE "COMMON-LISP-USER"
                  :FILENAME NIL
                  :KIND (:NAME "DEFSETF" :PACKAGE "COMMON-LISP")
-                 :LINE 1 :START 0 :END 60
-                 :CODE
+                 :LINE 1 :START 0 :END 60 :CODE
                  "(DEFSETF COMMON-LISP-USER::SHORT-ACCESSOR COMMON-LISP-USER::UPDATE-FN
   \"Doc for short-accessor.\")"
                  :FUNCTION-CALLS NIL
@@ -530,10 +589,8 @@
     (cl-naive-tests:testcase
      :defsetf-long-docstring
      :equal #'equalp
-     ;; Current analyzer struggles with docstring in long form if it's not the first element after name
-     ;; It expects docstring as first element of 'rest' for short form.
-     ;; TODO: This will likely fail or be nil with current analyzer.
      :expected "Doc for long-accessor."
+     ;; TODO: This fails with nil
      :actual (let* ((analysis (get-first-analysis code-long)))
                (analysis-docstring analysis)))
 
@@ -547,21 +604,15 @@
     ;; Parameters are not robustly parsed for defsetf long form yet
     (cl-naive-tests:testcase
      :defsetf-long-parameters
-     :expected '(COMMON-LISP-USER::OBJ COMMON-LISP-USER::INDEX)
-     :actual (let* ((analysis (get-first-analysis "(defsetf long-accessor (obj index) (new-value)
-                   \"Doc for long-accessor.\"
-                   `(setf (aref ,obj ,index) ,new-value))")))
+     :expected '((:NAME COMMON-LISP-USER::OBJ :KIND :REQUIRED)
+                 (:NAME COMMON-LISP-USER::INDEX :KIND :REQUIRED))
+     :actual (let* ((analysis (get-first-analysis code-long)))
                (analysis-parameters analysis)))
 
-    ;; TODO: Body is walked, but `(aref ...)` might not be picked up as function call by gather-info
-    ;; TODO: lexical-definitions ; Parameters of the lambda-list are not currently added
-    ;; TODO: parameters = nil ; As per current analyzer
-    ;; TODO: Docstring extraction for long form might be tricky
     (cl-naive-tests:testcase
      :defsetf-long-sexp
      :equal #'equalp
-     :expected '(:NAME (:NAME "LONG-ACCESSOR"
-                        :PACKAGE "COMMON-LISP-USER")
+     :expected '(:NAME (:NAME "LONG-ACCESSOR" :PACKAGE "COMMON-LISP-USER")
                  :PACKAGE "COMMON-LISP-USER"
                  :FILENAME NIL
                  :KIND (:NAME "DEFSETF" :PACKAGE "COMMON-LISP")
@@ -579,17 +630,27 @@
                  :MACRO-CALLS NIL
                  :VARIABLE-USES NIL
                  :LEXICAL-DEFINITIONS
-                 ((:NAME "INDEX" :PACKAGE "COMMON-LISP-USER")
+                 ((:NAME "NEW-VALUE" :PACKAGE "COMMON-LISP-USER")
+                  (:NAME "INDEX" :PACKAGE "COMMON-LISP-USER")
                   (:NAME "OBJ" :PACKAGE "COMMON-LISP-USER"))
                  :DYNAMIC-DEFINITIONS NIL
                  :RAW-BODY "(ECLECTOR.READER:QUASIQUOTE
  (SETF (AREF (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::OBJ)
              (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::INDEX))
          (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::NEW-VALUE)))"
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "OBJ" :PACKAGE "COMMON-LISP-USER"))
+                   (:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "INDEX" :PACKAGE "COMMON-LISP-USER")))
+                  :OPTIONALS NIL :REST NIL :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL :AUXES NIL)
+                 :STORE-VARIABLES ((:NAME "NEW-VALUE" :PACKAGE "COMMON-LISP-USER"))
                  :PARAMETERS
-                 ((:NAME "OBJ" :PACKAGE "COMMON-LISP-USER")
-                  (:NAME "INDEX" :PACKAGE "COMMON-LISP-USER"))
-                 :DOCSTRING "Doc for long-accessor.")
+                 ((:NAME (:NAME "OBJ" :PACKAGE "COMMON-LISP-USER") :KIND :REQUIRED)
+                  (:NAME (:NAME "INDEX" :PACKAGE "COMMON-LISP-USER") :KIND :REQUIRED)))
      :actual (let* ((analysis (get-first-analysis code-long)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
 
@@ -699,14 +760,14 @@
                  :LEXICAL-DEFINITIONS NIL
                  :DYNAMIC-DEFINITIONS NIL
                  :DOCSTRING "A test package definition."
-                 :NICKNAMES ("MTP") :USES ("COMMON-LISP" "ALEXANDRIA")
+                 :NICKNAMES ("MTP")
+                 :USES ("COMMON-LISP" "ALEXANDRIA")
                  :EXPORTS
                  ((:NAME "FOO" :PACKAGE "COMMON-LISP-USER")
                   (:NAME "BAR" :PACKAGE "COMMON-LISP-USER"))
                  :SHADOWS ((:NAME "BAZ" :PACKAGE "COMMON-LISP-USER"))
                  :INTERNS
-                 ((:NAME "INTERNAL-SYMBOL" :PACKAGE "COMMON-LISP-USER"))
-                 :OTHER-SIZE 100)
+                 ((:NAME "INTERNAL-SYMBOL" :PACKAGE "COMMON-LISP-USER")) :OTHER-SIZE 100)
      :actual (let* ((analysis (get-first-analysis
                                code
                                :package (find-package :cl-user))))
@@ -800,8 +861,8 @@
                  :VARIABLE-USES NIL
                  :LEXICAL-DEFINITIONS NIL
                  :DYNAMIC-DEFINITIONS NIL
-                 :RAW-BODY "+"
-                 :DOCSTRING "My global variable.")
+                 :RAW-BODY
+                 "+" :DOCSTRING "My global variable.")
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
 
@@ -868,8 +929,8 @@
                  :VARIABLE-USES NIL
                  :LEXICAL-DEFINITIONS NIL
                  :DYNAMIC-DEFINITIONS NIL
-                 :RAW-BODY
-                 "*" :DOCSTRING "My constant.")
+                 :RAW-BODY "*"
+                 :DOCSTRING "My constant.")
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
 
@@ -903,9 +964,20 @@
 
     (cl-naive-tests:testcase
      :defmacro-parameters
-     :expected '(common-lisp-user::arg1 common-lisp-user::arg2)
-     :actual (let* ((analysis (get-first-analysis code :package (find-package :cl-user))))
-               (sort (copy-list (analysis-parameters analysis)) #'string< :key #'symbol-name)))
+     :expected '((:NAME COMMON-LISP-USER::ARG1 :KIND :REQUIRED)
+                 (:NAME COMMON-LISP-USER::ARG2 :KIND :OPTIONAL
+                  :DEFAULT-VALUE 0 :SUPPLIED-P-VARIABLE NIL))
+     :actual (let* ((analysis (get-first-analysis
+                               code
+                               :package (find-package :cl-user)))
+                    (parameters (sort (copy-list (analysis-parameters analysis))
+                                      #'string<
+                                      :key #'(lambda (par)
+                                               (getf par :name)))))
+               (remf (second parameters) :default-value-cst)
+               (remf (second parameters) :supplied-p-variable-cst)
+
+               parameters))
 
     ;;TODO: Body of a macro is not analyzed for calls in the same way as defun
 
@@ -931,12 +1003,26 @@
                  :LEXICAL-DEFINITIONS
                  ((:NAME "ARG2" :PACKAGE "COMMON-LISP-USER")
                   (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER"))
-                 :DYNAMIC-DEFINITIONS NIL :RAW-BODY "(ECLECTOR.READER:QUASIQUOTE
+                 :DYNAMIC-DEFINITIONS NIL
+                 :RAW-BODY "(ECLECTOR.READER:QUASIQUOTE
  (LIST (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::ARG1)
        (ECLECTOR.READER:UNQUOTE COMMON-LISP-USER::ARG2)))"
+                 :LAMBDA-INFO
+                 (:REQUIRED
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER
+                    (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER")))
+                  :OPTIONALS
+                  ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                    :SPECIALIZER NIL
+                    :INIT-FORM "COMMON-LISP-USER::ARG2"
+                    :SUPPLIED-P-VAR
+                    (:NAME "KIND" :PACKAGE "KEYWORD")))
+                  :REST NIL :KEYWORDS NIL :ALLOW-OTHER-KEYS NIL :AUXES NIL)
                  :PARAMETERS
-                 ((:NAME "ARG1" :PACKAGE "COMMON-LISP-USER")
-                  (:NAME "ARG2" :PACKAGE "COMMON-LISP-USER"))
+                 ((:NAME (:NAME "ARG1" :PACKAGE "COMMON-LISP-USER") :KIND :REQUIRED)
+                  (:NAME (:NAME "ARG2" :PACKAGE "COMMON-LISP-USER") :KIND :OPTIONAL
+                   :DEFAULT-VALUE 0))
                  :DOCSTRING "A test macro.")
      :actual (let* ((analysis (get-first-analysis code)))
                (cl-naive-code-analyzer::write-analysis analysis nil)))))
@@ -965,11 +1051,9 @@
      :load-project
      :expected '(:NAME (:NAME "TEST-DEFUN-NO-DOCSTRING" :PACKAGE "TEST-PACKAGE-SIMPLE")
                  :PACKAGE "TEST-PACKAGE-SIMPLE"
-                 :FILENAME NIL
                  :KIND (:NAME "DEFUN" :PACKAGE "COMMON-LISP")
                  :LINE 55 :START 2017 :END 2107
-                 :CODE
-                 "(DEFUN TEST-PACKAGE-SIMPLE::TEST-DEFUN-NO-DOCSTRING
+                 :CODE "(DEFUN TEST-PACKAGE-SIMPLE::TEST-DEFUN-NO-DOCSTRING
        (TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)
   (+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B))"
                  :FUNCTION-CALLS ((:NAME "+" :PACKAGE "COMMON-LISP"))
@@ -979,24 +1063,29 @@
                  ((:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE")
                   (:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE"))
                  :DYNAMIC-DEFINITIONS NIL
-                 :RAW-BODY
-                 "(+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)"
+                 :RAW-BODY "(+ TEST-PACKAGE-SIMPLE::A TEST-PACKAGE-SIMPLE::B)"
                  :LAMBDA-INFO
-                 (:REQUIRED
-                  ((:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
-                   (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE"))
-                  :OPTIONALS NIL :REST NIL :KEYWORDS NIL
-                  :ALLOW-OTHER-KEYS NIL :AUXES NIL)
+                 (:REQUIRED ((:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                              :SPECIALIZER (:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE"))
+                             (:NAME (:NAME "NAME" :PACKAGE "KEYWORD")
+                              :SPECIALIZER (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE")))
+                  :OPTIONALS NIL
+                  :REST NIL
+                  :KEYWORDS NIL
+                  :ALLOW-OTHER-KEYS NIL
+                  :AUXES NIL)
                  :PARAMETERS
-                 ((:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
-                  (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE"))
-                 :HASH NIL)
+                 ((:NAME (:NAME "A" :PACKAGE "TEST-PACKAGE-SIMPLE")
+                   :KIND :REQUIRED)
+                  (:NAME (:NAME "B" :PACKAGE "TEST-PACKAGE-SIMPLE")
+                   :KIND :REQUIRED)))
+
      :actual (let ((func (first (find-function (list "test-code")
                                                "TEST-DEFUN-NO-DOCSTRING"))))
                ;;Clearing properties that would be environment
                ;;specific for tests.
-               (setf (getf func :filename) nil)
-               (setf (getf func :hash) nil)
+               (remf func :filename)
+               (remf func :hash)
                func))))
 
 ;;(cl-naive-tests:run)
