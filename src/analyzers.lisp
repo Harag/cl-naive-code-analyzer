@@ -440,10 +440,7 @@ like function calls or variable uses."
                          (step-cst head-cst
                                    (if head
                                        (append path (list head))
-                                       path))))
-                     ;; At the end of this branch (or if rem becomes
-                     ;; an atom or circular)
-                     (return))))
+                                       path)))))))
       (step-cst cst nil)
       ;; Return diagnostic information about the walk
       (values (hash-table-count table)
@@ -464,13 +461,39 @@ like function calls or variable uses."
   ;; :other cases if relevant.
   (case (classify-semantic cst)
     (:call
-     (pushnew (real-raw cst)
-              (analysis-function-calls analysis)
-              :test #'equal))
+     ;;(pushnew (real-raw cst)
+     ;;         (analysis-function-calls analysis)
+     ;;         :test #'equal)
+     (let ((potential-fn-name-data (real-raw cst)))
+       ;; Ensure potential-fn-name-data is a symbol, as real-raw can return other things
+       ;; if the head of the CST is not a simple symbol (e.g. ((lambda (x) x) 1))
+       ;; For this specific bug, we are concerned with simple symbols that might be fboundp
+       ;; and also lexical variables.
+       (when (symbolp potential-fn-name-data)
+         ;; Check if this potential function name is actually a known lexical variable.
+         ;; analysis-lexical-definitions is a flat list of symbols, e.g. (PARAM1 PARAM2).
+         (let ((is-lexical nil))
+           (dolist (lexical-symbol (analysis-lexical-definitions analysis))
+             (when (eq potential-fn-name-data lexical-symbol) ; Direct symbol comparison
+               (setf is-lexical t)
+               (return)))
+           (unless is-lexical
+             ;; Store the raw symbol. Conversion to plist is handled by export-symbol in writers.
+             (pushnew potential-fn-name-data
+                      (analysis-function-calls analysis)
+                      :test #'eq))))))
     (:macro-call
-     (pushnew (real-raw cst)
-              (analysis-macro-calls analysis)
-              :test #'equal))
+     ;;(pushnew (real-raw cst)
+     ;;         (analysis-macro-calls analysis)
+     ;;         :test #'equal)
+     (let ((macro-name-data (real-raw cst)))
+       (when (symbolp macro-name-data)
+         ;; Store the raw symbol. Macros are generally global, so lexical check might be less relevant,
+         ;; but storing raw symbol is consistent.
+         (pushnew macro-name-data
+                  (analysis-macro-calls analysis)
+                  :test #'eq))))
+
     (:assignment
      ;; TODO: Extract assigned variable and value.
      (format t "Assignment CST: ~S~%" cst))

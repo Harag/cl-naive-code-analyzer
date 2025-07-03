@@ -254,12 +254,12 @@
   "Checks if the function defined by FUNC-DEF is exported from its package.
    FUNC-DEF is a plist representing a function definition.
    PROJECTS is a list of project names to search for the package definition."
-  (let* ((func-name-str (getf func-def :name))
-         (func-package-str (getf func-def :package))
+  (let* ((func-name-str (getf (getf func-def :name) :name))
+         (func-package-str (getf (getf func-def :name) :package))
          (package-defs (query-analyzer
                         (lambda (def)
                           (let ((kind-name (getf (getf def :kind) :name))
-                                (def-name (getf def :name)))
+                                (def-name (getf (getf def :name) :name)))
                             ;; Ensure :kind is a plist with :name, and def :name is also present
                             (and kind-name def-name
                                  (string-equal kind-name "DEFPACKAGE")
@@ -289,7 +289,8 @@ Returns a list of definition plists for such uncalled functions."
     (loop for func-def in functions
           ;; Check if this function is called by any other definition.
           unless (query-analyzer
-                  (make-callers-of-query (getf func-def :name) (getf func-def :package))
+                  (make-callers-of-query (getf (getf func-def :name) :name)
+                                         (getf (getf func-def :name) :package))
                   :projects projects)
           collect func-def)))
 
@@ -369,19 +370,19 @@ empty if none are found."
       (dolist (callee-sym-info all-callee-symbols)
         (let* ((callee-name (getf callee-sym-info :name))
                (callee-pkg (getf callee-sym-info :package)))
-
           (let* ((callee-def-list (query-analyzer
                                    (lambda (def)
-                                     (let ((name-info (getf def :name))
-                                           (pkg-info (getf def :package)))
-                                       (and name-info pkg-info
-                                            (string-equal (getf name-info :name) callee-name)
-                                            (string-equal pkg-info callee-pkg))))
+                                     (let ((name (getf (getf def :name) :name))
+                                           (pkg (getf (getf def :name) :package)))
+                                       (and name pkg
+                                            (string-equal name
+                                                          callee-name)
+                                            (string-equal pkg callee-pkg))))
                                    :projects (list project-name)))
                  (callee-def (car callee-def-list)))
             (if callee-def
-                (pushnew (getf callee-def :code) direct-callees-defs :test #'string=)
-                (pushnew callee-sym-info direct-callees-defs :test #'string=))))))
+                (pushnew callee-def direct-callees-defs :test #'equalp)
+                (pushnew callee-sym-info direct-callees-defs :test #'equalp))))))
 
     (let ((result `(:target-definition
                     ,target-fn-defs
@@ -420,8 +421,7 @@ empty if none are found."
                                            :test #'string-equal)))
                                 ((eq type :generic-functions)
                                  (lambda (def)
-                                   (string-equal (getf (getf def :kind)
-                                                       :name)
+                                   (string-equal (getf (getf def :kind) :name)
                                                  "DEFGENERIC")))
                                 ((eq type :types)
                                  (lambda (def)
@@ -453,6 +453,10 @@ empty if none are found."
 (uncalled-functions '("xdb2"))
 
 (find-function'("test-code") "TEST-DEFUN-NO-DOCSTRING")
+
+(get-direct-function-call-info "xdb2"
+"MARK-OBJECTS-NOT-WRITTEN"
+"xdb2")
 
 (get-direct-function-call-info "test-code"
 "FUNCTION-USING-MACRO"
