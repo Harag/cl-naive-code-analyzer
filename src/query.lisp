@@ -368,9 +368,8 @@ empty if none are found."
            (all-callee-symbols (append fn-calls mc-calls)))
 
       (dolist (callee-sym-info all-callee-symbols)
-        (let* ((callee-name (getf (getf callee-sym-info :name) :name))
-               (callee-pkg (getf (getf callee-sym-info :name) :package)))
-
+        (let* ((callee-name (getf callee-sym-info :name))
+               (callee-pkg (getf callee-sym-info :package)))
           (let* ((callee-def-list (query-analyzer
                                    (lambda (def)
                                      (let ((name-info (getf def :name))
@@ -382,7 +381,7 @@ empty if none are found."
                                    :projects (list project-name)))
                  (callee-def (car callee-def-list)))
             (if callee-def
-                (pushnew (getf callee-def :code) direct-callees-defs :test #'equalp)
+                (pushnew callee-def direct-callees-defs :test #'equalp)
                 (pushnew callee-sym-info direct-callees-defs :test #'equalp))))))
 
     (let ((result `(:target-definition
