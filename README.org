@@ -18,20 +18,28 @@ architectural patterns.
 *WARNING:* The code was written by ChatGPT-4o, then hacked by ChatGPT
 codex and is now mostly in the hands of Google Jules.
 
-*WARNING:* The code is PRE-ALPHA and changing weekly with breaking changes!
+*STATUS:* Late Pre-Alpha / Early Alpha
 
-A lot more needs to be done:
- - Unit Tests
- - More refactoring
- - Lots more useful predefined queries
- - Documentation
- - Examples
- - Document strings on the top level - aka file summary/help/notes
-   - It looked simple but ChatGPT could not get it right and I did not
-     have the energy to hand craft it at the time.
- - Scrape TODOs etc
- - naive-store  code  needs  cleanup  and some  safety  checks  and  a
-   separate load function once analysis is done.
+The project has a solid foundational implementation for parsing and analyzing many Common Lisp definition types. Core features supporting code navigation, documentation data extraction, and basic dependency analysis are in place. A comprehensive test suite exists and largely passes.
+
+However, active development and refinement are ongoing. Expect breaking changes as the system matures. Key areas for improvement include:
+ - *Address Test Failures:* Resolve the 8 failing tests and 1 error identified in the current test suite to improve stability.
+ - *Enhance Robustness & Error Handling:* Implement more comprehensive error handling throughout the parsing and analysis process, particularly for ASDF operations, malformed code, and edge cases in CST manipulation. Systematically address TODO comments related to robustness.
+ - *Complete Feature Implementation:*
+    - Fully implement robust handling of read-time evaluation (`#.`) and feature expressions (`#+`, `#-`) beyond current placeholders.
+    - Improve the depth of analysis for complex forms (e.g., detailed slot options in `DEFCLASS`/`DEFSTRUCT`, advanced `DEFPACKAGE` clauses like `:shadowing-import-from`, `DEFSETF` parameter parsing).
+    - Make dead code detection (`uncalled-functions`) more reliable by accounting for indirect calls (apply, funcall), exports, and entry points.
+ - *Refine Core Components:*
+    - Review and potentially refactor complex areas like CST walkers (`walk-cst`, `walk-cst-with-context`) and the Eclector client customizations for clarity, efficiency, and correctness.
+    - Consolidate or clarify roles of potentially duplicated functionality (e.g., `init-project` in `query.lisp` vs. `init-project-store` in `naive-store.lisp`).
+ - *Improve Querying and Analysis:*
+    - Add more sophisticated predefined queries and analytical capabilities beyond direct call/definition retrieval.
+ - *Documentation and Examples:*
+    - Continue improving inline docstrings and overall documentation.
+    - Provide more usage examples and tutorials.
+    - Add file-level summary docstrings.
+ - *Address General TODOs:* Systematically work through the numerous TODO comments scattered throughout the codebase to refine and complete pending tasks.
+ - *cl-naive-store Integration:* Review and finalize `cl-naive-store` integration, ensuring cleanup, safety checks, and optimized loading post-analysis.
 
 /* You need code that compiles and can be loaded. The library loads
 the project before analysis is started to help fill in some gaps with
