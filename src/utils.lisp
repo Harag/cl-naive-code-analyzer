@@ -18,14 +18,6 @@
 
 (in-package :cl-naive-code-analyzer)
 
-;; A hash table presumably for storing custom analyzers for specific forms.
-
-;; TODO: This variable is defined but not used within this file or
-;;       apparently by core analyzer logic.  If it's part of a planned
-;;       feature for extensible analyzers, it needs to be integrated.
-(defparameter *form-analyzers* (make-hash-table :test 'equal)
-  "A hash table to potentially store custom form analyzer functions. Currently unused.")
-
 (defparameter *export-symbol-standin* nil)
 
 ;; Safely exports a symbol or a compound symbol name (like `(SETF
