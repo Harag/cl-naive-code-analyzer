@@ -322,6 +322,70 @@
 ;;; the function FN.  FN is called with (current-cst path
 ;;; remaining-tail).
 
+;;; Helper functions for processing lambda list parameters
+
+(defun process-parameter-lexical-defs (param-detail analysis)
+  "Extracts and stores lexical variable names (parameter name and its
+supplied-p variable, if any) from a parameter detail plist into the
+analysis object."
+  (let ((name (getf param-detail :name))
+        (supplied-p-var (getf param-detail :supplied-p-variable)))
+    (when name
+      ;; Ensure name is a symbol before pushing, as it could be a list for destructuring
+      (if (symbolp name)
+          (pushnew name (analysis-lexical-definitions analysis) :test #'eq) ; CORRECTED SLOT NAME
+          ;; If name is a list (destructuring), its components are handled by process-destructured-parameter
+          nil))
+    (when supplied-p-var
+      (pushnew supplied-p-var (analysis-lexical-definitions analysis) :test #'eq)))) ; CORRECTED SLOT NAME
+
+(defun process-parameter-csts (param-detail analysis context)
+  "Identifies and walks specific CSTs within a parameter detail (default
+values, type specifiers, destructuring forms) to gather information
+like function calls or variable uses."
+  (let ((default-value-cst (getf param-detail :default-value-cst))
+        (type-specifier-cst (getf param-detail :type-specifier-cst))
+        (name-cst (getf param-detail :name-cst)) ; CST of the parameter name/destructuring pattern
+        (name (getf param-detail :name)))
+    ;; Walk default value CST, if present
+    (when default-value-cst
+      (walk-cst-with-context default-value-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))
+    ;; Walk type specifier CST for relevant contexts (e.g., defmethod)
+    (when (and type-specifier-cst (member context '(:specialized :method))) ; :method is an alias for :specialized context in some parts
+      (walk-cst-with-context type-specifier-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))
+    ;; If the parameter name itself is a list (destructuring) and we have its CST representation
+    (when (and name-cst (listp name) (not (null name))) ; Ensure it's a non-empty list
+      (walk-cst-with-context name-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))))
+
+(defun process-destructured-parameter (param-detail analysis context)
+  "Recursively process components of a destructured parameter."
+  (when (getf param-detail :destructured)
+    (let ((sub-parameters (getf param-detail :sub-parameters))) ; This is a lambda-list-like plist
+      (when sub-parameters
+        (dolist (section '(:required :optionals :keys :aux)) ; Standard sections in a nested lambda list
+          (dolist (sub-param (getf sub-parameters section))
+            (process-parameter-lexical-defs sub-param analysis)
+            (process-parameter-csts sub-param analysis context)
+            ;; Recursive call for nested destructuring
+            (when (getf sub-param :destructured)
+              (process-destructured-parameter sub-param analysis context))))
+        ;; Handle :rest or :body if present in sub-parameters
+        (let ((rest-param (or (getf sub-parameters :rest) (getf sub-parameters :body))))
+          (when rest-param
+            (process-parameter-lexical-defs rest-param analysis)
+            (process-parameter-csts rest-param analysis context)
+            (when (getf rest-param :destructured)
+              (process-destructured-parameter rest-param analysis context))))))))
+
 ;;; TODO: The `path` construction `(append path (list head))` can be
 ;;;       inefficient for deep trees.  Consider alternative ways to
 ;;;       manage path information if performance becomes an issue.
@@ -477,103 +541,43 @@
                             (concrete-syntax-tree:nthrest 4 cst)
                             (concrete-syntax-tree:nthrest 3 cst)))
          (name          (concrete-syntax-tree:raw name-cst))
-         ;; Parse the lambda list using Alexandria for detailed info
-         (lambda-list   (and args-cst
-                             (concrete-syntax-tree:consp args-cst)
-                             (mapcar #'concrete-syntax-tree:raw
-                                     (cst:listify args-cst))))
-
-         ;; Destructure parsed lambda list components
-         (required)
-         (optionals) ; list of (name init suppliedp)
-         (rest-name)  ; symbol or nil
-         (keywords) ; list of ((keyword name) init suppliedp)
-         (allow-other-p)  ; boolean
-         (auxes)) ; list of (name init)
-
-    (when lambda-list
-      (multiple-value-setq (required optionals rest-name keywords allow-other-p auxes)
-        (alexandria:parse-ordinary-lambda-list
-         lambda-list
-         ;; Standardize lambda list keywords
-         :normalize t
-         ;; For generic function parameter lists (though this is defun)
-         :allow-specializers t
-         ;; Normalize (opt x) to (opt x nil opt-p)
-         :normalize-optional t
-         ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-         :normalize-keyword t
-         ;; Normalize &aux (x y) to &aux (x nil) (y nil)
-         :normalize-auxilary t)))
+         ;; Get the lambda list CST
+         (lambda-list-cst args-cst)
+         ;; Parse the lambda list CST using the new parser
+         (parsed-ll (if (and lambda-list-cst
+                             (concrete-syntax-tree:consp lambda-list-cst))
+                        (parse-lambda-list-cst lambda-list-cst :context :ordinary)
+                        nil)))
 
     ;; Populate analysis slots
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis) body-cst)
 
-    ;; Store detailed lambda list information
-    (setf (analysis-lambda-info analysis)
-          (list :required required
-                :optionals optionals
-                :rest rest-name
-                :keywords keywords
-                :allow-other-keys allow-other-p
-                :auxes auxes))
+    ;; Store detailed lambda list information from the new parser
+    (setf (analysis-lambda-info analysis) parsed-ll)
 
     ;; Populate analysis-parameters with detailed structures
     (let ((detailed-params '()))
-      ;; Required parameters
-      (dolist (r required)
-        (push (list :name r :kind :required) detailed-params)
-        (pushnew r (analysis-lexical-definitions analysis) :test #'eq))
+      (when parsed-ll
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-      ;; Optional parameters: (name init-form supplied-p-name)
-      (dolist (o optionals)
-        (let ((opt-name (first o))
-              (opt-init (second o))
-              (opt-sp (third o)))
-          (push (list :name opt-name
-                      :kind :optional
-                      :default-value opt-init
-                      :supplied-p-variable opt-sp)
-                detailed-params)
-          (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
-          (when opt-sp
-            (pushnew opt-sp (analysis-lexical-definitions analysis) :test #'eq))))
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :ordinary)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :ordinary))))
 
-      ;; Rest parameter
-      (when rest-name
-        (push (list :name rest-name :kind :rest) detailed-params)
-        (pushnew rest-name (analysis-lexical-definitions analysis) :test #'eq))
-
-      ;; Keyword parameters: ((keyword-name var-name) init-form supplied-p-name)
-      (dolist (k keywords)
-        (let* ((kw-pair (first k)) ; ((:keyword varname) ...)
-               ;; (kw-keyword (first kw-pair)) ; :keyword - Not storing this directly in param detail for now
-               (kw-varname (second kw-pair)) ; varname
-               (kw-init (second k))
-               (kw-sp (third k)))
-          (push (list :name kw-varname
-                      :kind :key
-                      :default-value kw-init
-                      :supplied-p-variable kw-sp)
-                detailed-params)
-          (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
-          (when kw-sp
-            (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-      ;; Aux variables: (name init-form)
-      (dolist (a auxes)
-        (let ((aux-name (first a))
-              (aux-init (second a)))
-          (push (list :name aux-name
-                      :kind :aux
-                      :default-value aux-init)
-                detailed-params)
-          (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq)))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
-
-    ;; Walk the body for calls, uses, assignments, etc.
+    ;; Analyze the function body
     (when body-cst
       (walk-cst-with-context
        body-cst
@@ -582,65 +586,11 @@
          (gather-info current-body-cst analysis))))
     analysis))
 
-#|
 ;;; Specialized method for ANALYZE-CST for DEFMACRO forms.
-(defmethod analyze-cst__ (cst (analysis defmacro-analysis))
-"Analyzes a DEFMACRO CST to extract name, arguments, docstring, and body.
-Populates the DEFMACRO-ANALYSIS object."
-;; TODO: Error handling for malformed DEFMACRO CSTs.
-
-;; TODO: Macro lambda lists can be complex
-;;       (destructuring). `simple-lambda-params` might be too
-;;       simple.  Consider using alexandria:parse-macro-lambda-list
-;;       for more detailed parsing if needed.
-(let* ((name-cst     (concrete-syntax-tree:second cst))
-(args-cst     (concrete-syntax-tree:third cst))
-(possible-doc (concrete-syntax-tree:fourth cst))
-(doc          (when (and possible-doc
-(concrete-syntax-tree:atom possible-doc)
-(stringp (concrete-syntax-tree:raw possible-doc)))
-(concrete-syntax-tree:raw possible-doc)))
-(body-cst     (if doc
-(concrete-syntax-tree:nthrest 4 cst)
-(concrete-syntax-tree:nthrest 3 cst)))
-(name         (concrete-syntax-tree:raw name-cst))
-(params       (simple-lambda-params args-cst)))
-(setf (analysis-name analysis)      name
-(analysis-docstring analysis) doc
-(analysis-raw-body analysis)  body-cst
-(analysis-parameters analysis) params)
-;; Record lexical definitions for parameters
-(dolist (p params)
-(when (symbolp p)
-(pushnew p (analysis-lexical-definitions analysis) :test #'eq)))
-;; Analyze the macro body
-(when body-cst
-(walk-cst-with-context
-body-cst
-(lambda (current-body-cst path tail)
-(declare (ignore path tail))
-(gather-info current-body-cst analysis))))
-analysis))
-|#
-
 ;;; Specialized method for ANALYZE-CST for DEFMACRO forms.
 (defmethod analyze-cst (cst (analysis defmacro-analysis))
   "Analyzes a DEFMACRO CST to extract name, arguments, docstring, and body.
    Populates the DEFMACRO-ANALYSIS object."
-  ;; TODO: Error handling for malformed DEFMACRO CSTs.
-
-  ;; TODO: Macro lambda lists can be complex
-  ;;       (destructuring). `simple-lambda-params` might be too
-  ;;       simple.  Consider using alexandria:parse-macro-lambda-list
-  ;;       for more detailed parsing if needed.
-  ;;
-  ;; NOTE: Macro lambda lists (which can include &whole, &environment, &body, and complex destructuring)
-  ;;       are processed using a hybrid approach:
-  ;;       1. &whole and &environment are manually extracted.
-  ;;       2. The segment before &body/&rest is parsed using alexandria:parse-ordinary-lambda-list.
-  ;;       3. &body/&rest variable is manually extracted.
-  ;;       This avoids passing macro-specific keywords like &body directly to parse-ordinary-lambda-list,
-  ;;       while still leveraging it for the compatible parts of the lambda list.
   (let* ((name-cst     (concrete-syntax-tree:second cst))
          (args-cst     (concrete-syntax-tree:third cst))
          (possible-doc (concrete-syntax-tree:fourth cst))
@@ -652,156 +602,54 @@ analysis))
                            (concrete-syntax-tree:nthrest 4 cst)
                            (concrete-syntax-tree:nthrest 3 cst)))
          (name         (concrete-syntax-tree:raw name-cst))
-         ;; Start of hybrid parsing logic
-         (raw-ll       (if (and args-cst (concrete-syntax-tree:consp args-cst))
-                           (mapcar #'concrete-syntax-tree:raw (cst:listify args-cst))
-                           nil))
-         (whole-var nil)
-         (env-var nil)
-         (body-var nil)
-         (ordinary-segment raw-ll)
-         (processed-params '()))
-
-    ;; 1. Extract &whole
-    (when (and ordinary-segment (eq (first ordinary-segment) '&whole))
-      (when (cdr ordinary-segment)
-        (setf whole-var (second ordinary-segment))
-        (setf ordinary-segment (cddr ordinary-segment)))
-      #|;; Consider error or warning if &whole is not followed by a variable|#)
-
-    ;; 2. Extract &environment
-    (when (and ordinary-segment (eq (first ordinary-segment) '&environment))
-      (when (cdr ordinary-segment)
-        (setf env-var (second ordinary-segment))
-        (setf ordinary-segment (cddr ordinary-segment)))
-      #| ;; Consider error or warning if &environment is not followed by a variable|#)
-
-    ;; 3. Extract &body (or &rest)
-    (let ((body-keyword-pos (or (position '&body ordinary-segment)
-                                (position '&rest ordinary-segment))))
-      (if body-keyword-pos
-          (progn
-            (when (> (length ordinary-segment) (1+ body-keyword-pos))
-              (setf body-var (nth (1+ body-keyword-pos) ordinary-segment)))
-            ;; Consider error or warning if &body/&rest is not followed by a variable
-            (setf ordinary-segment (subseq ordinary-segment 0 body-keyword-pos)))
-          ;; If no &body/&rest, ordinary-segment remains as is
-          nil))
-
-    ;; 4. Parse the ordinary-segment
-    (setf (analysis-whole-var analysis) whole-var)
-    (setf (analysis-environment-var analysis) env-var)
-    (setf (analysis-body-var analysis) body-var)
-
-    (if ordinary-segment
-        (multiple-value-bind (required optional rest-ord keywords allow-other-keys-p aux)
-            (alexandria:parse-ordinary-lambda-list ordinary-segment
-                                                   :normalize t
-                                                   :allow-specializers t ; Important for destructuring
-                                                   :normalize-optional t
-                                                   :normalize-keyword t
-                                                   :normalize-auxilary t)
-          (setf (analysis-ordinary-lambda-list-details analysis)
-                (list :required required
-                      :optional optional
-                      :rest rest-ord ; rest var within the ordinary segment
-                      :keywords keywords
-                      :allow-other-keys allow-other-keys-p
-                      :aux aux))
-          ;; Populate flat parameter list
-          ;; Populate detailed parameter list (processed-params will store these plists)
-          (when whole-var
-            (push (list :name whole-var :kind :whole) processed-params)
-            (pushnew whole-var (analysis-lexical-definitions analysis) :test #'eq))
-          (when env-var
-            (push (list :name env-var :kind :environment) processed-params)
-            (pushnew env-var (analysis-lexical-definitions analysis) :test #'eq))
-
-          (let ((details (analysis-ordinary-lambda-list-details analysis)))
-            (when details
-              ;; Required parameters (can be destructured)
-              (dolist (r (getf details :required))
-                (labels ((collect-req (item path-acc)
-                           (if (consp item)
-                               ;; Destructuring: item is a list, recurse
-                               (dolist (sub-item item)
-                                 (collect-req sub-item (cons item path-acc)))
-                               ;; Simple symbol
-                               (when (symbolp item)
-                                 (push (list :name item :kind :required
-                                             :destructuring-parent (first path-acc)) ; Store parent if destructured
-                                       processed-params)
-                                 (pushnew item (analysis-lexical-definitions analysis) :test #'eq)))))
-                  (collect-req r nil)))
-
-              ;; Optional parameters: (name init-form supplied-p-name)
-              (dolist (o (getf details :optional))
-                (let ((opt-name (first o))
-                      (opt-init (second o))
-                      (opt-sp (third o)))
-                  (push (list :name opt-name
-                              :kind :optional
-                              :default-value opt-init
-                              :supplied-p-variable opt-sp)
-                        processed-params)
-                  (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
-                  (when opt-sp
-                    (pushnew opt-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-              ;; Rest parameter (from ordinary segment)
-              (let ((rest-ord-var (getf details :rest)))
-                (when rest-ord-var
-                  (push (list :name rest-ord-var :kind :rest) processed-params)
-                  (pushnew rest-ord-var (analysis-lexical-definitions analysis) :test #'eq)))
-
-              ;; Keyword parameters: ((keyword-name var-name) init-form supplied-p-name)
-              (dolist (k (getf details :keywords))
-                (let* ((kw-pair (first k)) ; ((:keyword varname) ...)
-                       (kw-varname (second kw-pair)) ; varname
-                       (kw-init (second k))
-                       (kw-sp (third k)))
-                  (push (list :name kw-varname
-                              :kind :key
-                              ;; :keyword (first kw-pair) ; Store the actual keyword like :FOO
-                              :default-value kw-init
-                              :supplied-p-variable kw-sp)
-                        processed-params)
-                  (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
-                  (when kw-sp
-                    (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-              ;; Aux variables: (name init-form)
-              (dolist (a (getf details :aux))
-                (let ((aux-name (first a))
-                      (aux-init (second a)))
-                  (push (list :name aux-name
-                              :kind :aux
-                              :default-value aux-init)
-                        processed-params)
-                  (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq))))))
-        ;; No ordinary-segment (e.g. lambda list was only &whole, &env, &body)
-        ;; &whole and &env already handled. Now handle &body if it was standalone.
-        (when (and (not ordinary-segment) body-var) ; Check if body-var exists and wasn't part of ordinary
-          (push (list :name body-var :kind :body) processed-params)
-          (pushnew body-var (analysis-lexical-definitions analysis) :test #'eq)))
-
-    ;; If &body was part of the main lambda list (not via ordinary segment)
-    ;; This covers cases where &body might be the only thing after &whole/&env
-    ;; or if ordinary-segment was nil.
-    (when (and body-var (not (member body-var (mapcar #'(lambda (p) (getf p :name)) processed-params) :test #'eq)))
-      (push (list :name body-var :kind :body) processed-params)
-      (pushnew body-var (analysis-lexical-definitions analysis) :test #'eq))
+         ;; Get the lambda list CST
+         (lambda-list-cst args-cst)
+         ;; Parse the lambda list CST using the new parser with :macro context
+         (parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
+                        (parse-lambda-list-cst lambda-list-cst :context :macro)
+                        nil)))
 
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
-          (analysis-raw-body analysis) body-cst
-          (analysis-parameters analysis) (nreverse processed-params))
+          (analysis-raw-body analysis) body-cst)
 
-    ;; Lexical definitions are already populated during parameter processing.
-    ;; No need for the separate loop over (analysis-parameters analysis) if :name is correctly extracted.
-    ;; (dolist (p (analysis-parameters analysis))
-    ;;   (when (symbolp (getf p :name)) ; Assuming :name holds the symbol
-    ;;     (pushnew (getf p :name) (analysis-lexical-definitions analysis) :test #'eq)))
+    (setf (analysis-lambda-info analysis) parsed-ll)
+    (setf (analysis-ordinary-lambda-list-details analysis) nil) ; Clear old slot
+
+    (when parsed-ll
+      ;; Populate analysis-parameters first
+      (let ((whole-p (getf parsed-ll :whole))
+            (env-p (getf parsed-ll :environment))
+            (body-p (getf parsed-ll :body))
+            ;; temp list for all params that go into analysis-parameters
+            (all-params-for-slot '()))
+
+        (when whole-p
+          (setf (analysis-whole-var analysis) (getf whole-p :name))
+          (push whole-p all-params-for-slot))
+        (when env-p
+          (setf (analysis-environment-var analysis) (getf env-p :name))
+          (push env-p all-params-for-slot))
+        (when body-p
+          (setf (analysis-body-var analysis) (getf body-p :name))
+          (push body-p all-params-for-slot))
+
+        (dolist (p (getf parsed-ll :required)) (push p all-params-for-slot))
+        (dolist (p (getf parsed-ll :optionals)) (push p all-params-for-slot))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when (and rest-p (not (analysis-body-var analysis))) ; Prioritize &body if present
+            (push rest-p all-params-for-slot)))
+        (dolist (p (getf parsed-ll :keys)) (push p all-params-for-slot))
+        (dolist (p (getf parsed-ll :aux)) (push p all-params-for-slot))
+        (setf (analysis-parameters analysis) (nreverse all-params-for-slot)))
+
+      ;; Now process all parameters stored in (analysis-parameters analysis)
+      ;; including &whole, &environment, &body if they were added.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :macro)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :macro))))
 
     ;; Analyze the macro body
     (when body-cst
@@ -837,95 +685,51 @@ analysis))
     (let* ((args-cst     part)
            (next-idx (+ index 1)) ; Index for possible docstring
            (possible-doc (concrete-syntax-tree:nth next-idx cst))
-           (doc          (when (and possible-doc
-                                    (concrete-syntax-tree:atom possible-doc)
-                                    (stringp (concrete-syntax-tree:raw possible-doc)))
-                           (concrete-syntax-tree:raw possible-doc)))
-           (body-cst     (if doc
-                             (concrete-syntax-tree:nthrest (+ next-idx 1) cst)
-                             (concrete-syntax-tree:nthrest next-idx cst)))
-           (name         (real-raw name-cst)) ; Handles (SETF name) correctly
-           (raw-lambda-list (and args-cst
+           (doc(when (and possible-doc
+                          (concrete-syntax-tree:atom possible-doc)
+                          (stringp (concrete-syntax-tree:raw possible-doc)))
+                 (concrete-syntax-tree:raw possible-doc)))
+           (body-cst (if doc
+                         (concrete-syntax-tree:nthrest (+ next-idx 1) cst)
+                         (concrete-syntax-tree:nthrest next-idx cst)))
+           (name (real-raw name-cst)) ; Handles (SETF name) correctly
+           (lambda-list-cst (and args-cst
                                  (concrete-syntax-tree:consp args-cst)
-                                 (mapcar #'concrete-syntax-tree:raw
-                                         (cst:listify args-cst))))
-           ;; Parsed lambda list components
-           (required nil) (optionals nil) (rest-var nil)
-           (keywords nil) (allow-other-keys-p nil) (auxs nil))
-
-      (when raw-lambda-list
-        (multiple-value-setq (required optionals rest-var keywords allow-other-keys-p auxs)
-          (alexandria:parse-ordinary-lambda-list
-           raw-lambda-list
-           ;; Standardize lambda list keywords
-           :normalize t
-           ;; For generic function parameter lists (though this is defun)
-           :allow-specializers t
-           ;; Normalize (opt x) to (opt x nil opt-p)
-           :normalize-optional t
-           ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-           :normalize-keyword t
-           ;; Normalize &aux (x y) to &aux (x nil) (y nil)
-           :normalize-auxilary t)))
+                                 ;; No need to mapcar raw here, parser takes CST
+                                 args-cst))
+           ;; Parse the lambda list CST using the new parser
+           (parsed-ll (if (and lambda-list-cst
+                               (concrete-syntax-tree:consp lambda-list-cst))
+                          (parse-lambda-list-cst lambda-list-cst :context :specialized)
+                          nil)))
 
       (setf (analysis-name analysis) name
             (analysis-docstring analysis) doc
             (analysis-raw-body analysis) body-cst)
 
-      (setf (analysis-lambda-info analysis)
-            (list :required required :optionals optionals :rest rest-var
-                  :keywords keywords :allow-other-keys allow-other-keys-p :auxs auxs))
+      ;; Store detailed lambda list information from the new parser
+      (setf (analysis-lambda-info analysis) parsed-ll)
 
+      ;; Populate analysis-parameters
       (let ((detailed-params '()))
-        ;; Required parameters: either 'symbol' or '(symbol type-specifier)'
-        (dolist (r required)
-          (let ((param-name (if (consp r) (first r) r))
-                (type-spec (if (consp r) (second r) nil)))
-            (push (list :name param-name
-                        :kind :required
-                        :type-specifier type-spec)
-                  detailed-params)
-            (when (symbolp param-name) ; Record only symbol names for lexical defs
-              (pushnew param-name (analysis-lexical-definitions analysis) :test #'eq))))
+        (when parsed-ll
+          ;; First, collect all parameter plists for (analysis-parameters analysis)
+          (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+          (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+          (let ((rest-p (getf parsed-ll :rest)))
+            (when rest-p (push rest-p detailed-params)))
+          (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+          (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+          (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-        ;; Optional parameters: (name init suppliedp)
-        (dolist (o optionals)
-          (let ((opt-name (first o)) (opt-init (second o)) (opt-sp (third o)))
-            (push (list :name opt-name
-                        :kind :optional
-                        :default-value opt-init
-                        :supplied-p-variable opt-sp)
-                  detailed-params)
-            (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
-            (when opt-sp (pushnew opt-sp (analysis-lexical-definitions analysis)
-                                  :test #'eq))))
-
-        (when rest-var
-          (push (list :name rest-var :kind :rest) detailed-params)
-          (pushnew rest-var (analysis-lexical-definitions analysis) :test #'eq))
-
-        ;; Keyword parameters: ((keyword name) init suppliedp)
-        (dolist (k keywords)
-          (let* ((kw-pair (first k))
-                 (kw-varname (second kw-pair)) ; Variable name
-                 (kw-init (second k))
-                 (kw-sp (third k)))
-            (push (list :name kw-varname
-                        :kind :key
-                        :default-value kw-init
-                        :supplied-p-variable kw-sp)
-                  detailed-params)
-            (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
-            (when kw-sp (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-        (dolist (a auxs) ; (name init)
-          (let ((aux-name (first a)) (aux-init (second a)))
-            (push (list :name aux-name
-                        :kind :aux
-                        :default-value aux-init)
-                  detailed-params)
-            (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq)))
-        (setf (analysis-parameters analysis) (nreverse detailed-params)))
+        ;; Now, iterate over the collected parameter details
+        ;; to apply the new helper functions.
+        (dolist (p (analysis-parameters analysis))
+          (process-parameter-lexical-defs p analysis)
+          ;; Note: :specialized context for defmethod
+          (process-parameter-csts p analysis :specialized)
+          (when (getf p :destructured)
+            (process-destructured-parameter p analysis :specialized))))
 
       ;; Analyze the method body
       (when body-cst
@@ -951,97 +755,35 @@ analysis))
                            (concrete-syntax-tree:nthrest 4 cst)
                            (concrete-syntax-tree:nthrest 3 cst)))
          (name         (concrete-syntax-tree:raw name-cst))
-         (raw-lambda-list (and args-cst
-                               (concrete-syntax-tree:consp args-cst)
-                               (mapcar #'concrete-syntax-tree:raw
-                                       (cst:listify args-cst))))
-         ;; Using parse-macro-lambda-list as deftype lambda lists are similar (can have destructuring)
-         ;; but typically don't use &whole, &environment, &body.
-         whole env required optionals rest-var body-var keywords allow-other-keys-p auxs)
-
-    (when raw-lambda-list
-      ;; For deftype, &whole, &environment, &body are not standard, but parse-macro-lambda-list handles them.
-      ;; We'll primarily care about required, optionals, rest, keywords, aux.
-      (multiple-value-setq (whole env required optionals rest-var body-var keywords allow-other-keys-p auxs)
-        (alexandria:parse-ordinary-lambda-list
-         raw-lambda-list
-         ;; Standardize lambda list keywords
-         :normalize t
-         ;; For generic function parameter lists (though this is defun)
-         :allow-specializers t
-         ;; Normalize (opt x) to (opt x nil opt-p)
-         :normalize-optional t
-         ;; Normalize (key ((:foo x))) to (key ((:foo x) nil foo-p))
-         :normalize-keyword t
-         ;; Normalize &aux (x y) to &aux (x nil) (y nil)
-         :normalize-auxilary t)))
+         (lambda-list-cst args-cst)
+         (parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
+                        (parse-lambda-list-cst lambda-list-cst :context :deftype)
+                        nil)))
 
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
           (analysis-raw-body analysis) body-cst)
 
-    (setf (analysis-lambda-info analysis)
-          (list :required required :optionals optionals :rest rest-var
-                :keywords keywords :allow-other-keys allow-other-keys-p :auxs auxs
-                :whole whole :environment env :body body-var)) ; Store for completeness
+    (setf (analysis-lambda-info analysis) parsed-ll)
 
     (let ((detailed-params '()))
-      (labels ((add-lexical-defs (param-name)
-                 (if (consp param-name) ; Destructuring
-                     (dolist (sub-param (alexandria:flatten param-name))
-                       (when (and (symbolp sub-param)
-                                  (not (member sub-param
-                                               lambda-list-keywords)))
-                         (pushnew sub-param (analysis-lexical-definitions analysis)
-                                  :test #'eq)))
-                     (when (and (symbolp param-name)
-                                (not (member param-name
-                                             lambda-list-keywords)))
-                       (pushnew param-name (analysis-lexical-definitions analysis)
-                                :test #'eq)))))
+      (when parsed-ll
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-        ;; Deftype does not use &whole or &environment in its standard definition
-        ;; but we capture them if parse-macro-lambda-list returns them.
-        (when whole
-          (push (list :name whole :kind :whole) detailed-params)
-          (add-lexical-defs whole))
-        (when env
-          (push (list :name env :kind :environment) detailed-params)
-          (add-lexical-defs env))
-
-        (dolist (r required)
-          (push (list :name r :kind :required) detailed-params)
-          (add-lexical-defs r))
-
-        (dolist (o optionals) ; (name init suppliedp)
-          (let ((opt-name (first o)) (opt-init (second o)) (opt-sp (third o)))
-            (push (list :name opt-name :kind :optional
-                        :default-value opt-init :supplied-p-variable opt-sp)
-                  detailed-params)
-            (add-lexical-defs opt-name)
-            (when opt-sp (add-lexical-defs opt-sp))))
-
-        (when rest-var ; Deftype uses &rest, not &body. body-var should be nil.
-          (push (list :name rest-var :kind :rest) detailed-params)
-          (add-lexical-defs rest-var))
-
-        (dolist (k keywords) ; ((keyword name) init suppliedp)
-          (let* ((kw-pair (first k))
-                 (kw-varname (second kw-pair))
-                 (kw-init (second k))
-                 (kw-sp (third k)))
-            (push (list :name kw-varname :kind :key
-                        :default-value kw-init :supplied-p-variable kw-sp)
-                  detailed-params)
-            (add-lexical-defs kw-varname)
-            (when kw-sp (add-lexical-defs kw-sp))))
-
-        (dolist (a auxs) ; (name init)
-          (let ((aux-name (first a)) (aux-init (second a)))
-            (push (list :name aux-name :kind :aux :default-value aux-init)
-                  detailed-params)
-            (add-lexical-defs aux-name))))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :deftype)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :deftype))))
 
     ;; Analyze the deftype body
     (when body-cst
@@ -1062,74 +804,45 @@ analysis))
          (options-cst  (concrete-syntax-tree:nthrest 3 cst)) ; Options start after name and args
          (name     (concrete-syntax-tree:raw name-cst))
          (doc      nil)
-         (raw-lambda-list (and args-cst
-                               (concrete-syntax-tree:consp args-cst)
-                               (mapcar #'concrete-syntax-tree:raw
-                                       (cst:listify args-cst))))
-         ;; Parsed lambda list components
-         (required nil) (optionals nil) (rest-name nil)
-         (keywords nil) (allow-other-p nil) (auxs nil))
+         (lambda-list-cst args-cst)
+         (parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
+                        (parse-lambda-list-cst lambda-list-cst :context :generic-function-ordinary)
+                        nil)))
 
     ;; Extract docstring from options
     (when (and options-cst (concrete-syntax-tree:consp options-cst))
       (dolist (opt (cst:listify options-cst))
-        ;; Option should be a list like (:documentation "...")
         (when (and (concrete-syntax-tree:consp opt)
                    (eq (concrete-syntax-tree:raw (concrete-syntax-tree:first opt))
                        :documentation))
-          (let ((v (concrete-syntax-tree:second opt))) ; The docstring CST itself
+          (let ((v (concrete-syntax-tree:second opt)))
             (when (and v (concrete-syntax-tree:atom v)
                        (stringp (concrete-syntax-tree:raw v)))
               (setf doc (concrete-syntax-tree:raw v)))))))
 
-    (when raw-lambda-list
-      (multiple-value-setq (required optionals rest-name keywords allow-other-p auxs)
-        (alexandria:parse-ordinary-lambda-list raw-lambda-list
-                                               :allow-specializers nil ; Defgeneric LL doesn't have specializers
-                                               :normalize t)))
-
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc)
 
-    (setf (analysis-lambda-info analysis)
-          (list :required required :optionals optionals :rest rest-name
-                :keywords keywords :allow-other-keys allow-other-p :auxs auxs))
+    (setf (analysis-lambda-info analysis) parsed-ll)
 
     (let ((detailed-params '()))
-      (dolist (r required)
-        (push (list :name r :kind :required) detailed-params)
-        (pushnew r (analysis-lexical-definitions analysis) :test #'eq))
+      (when parsed-ll
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-      (dolist (o optionals)
-        (let ((opt-name (first o)) (opt-init (second o)) (opt-sp (third o)))
-          (push (list :name opt-name :kind :optional
-                      :default-value opt-init :supplied-p-variable opt-sp)
-                detailed-params)
-          (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
-          (when opt-sp (pushnew opt-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-      (when rest-name
-        (push (list :name rest-name :kind :rest) detailed-params)
-        (pushnew rest-name (analysis-lexical-definitions analysis) :test #'eq))
-
-      (dolist (k keywords)
-        (let* ((kw-pair (first k))
-               (kw-varname (second kw-pair))
-               (kw-init (second k))
-               (kw-sp (third k)))
-          (push (list :name kw-varname :kind :key
-                      :default-value kw-init :supplied-p-variable kw-sp)
-                detailed-params)
-          (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
-          (when kw-sp (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
-
-      ;; Aux parameters are not standard for defgeneric, but we process if Alexandria returns them
-      (dolist (a auxs)
-        (let ((aux-name (first a)) (aux-init (second a)))
-          (push (list :name aux-name :kind :aux :default-value aux-init)
-                detailed-params)
-          (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq)))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :generic-function-ordinary)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :generic-function-ordinary))))
 
     ;; Defgeneric doesn't have a "body" in the same way defun does,
     ;; but options might contain expressions.
@@ -1179,44 +892,36 @@ analysis))
                                                  (concrete-syntax-tree:consp doc-decl-body-cst-list))
                                         (concrete-syntax-tree:first doc-decl-body-cst-list))))
 
-          ;; Parse lambda-list for parameters
-          (let* ((raw-ll (mapcar #'concrete-syntax-tree:raw (cst:listify lambda-list-cst)))
-                 (required nil) (optionals nil) (rest-name nil)
-                 (keywords nil) (allow-other-p nil) (auxs nil)
+          ;; Parse lambda-list for parameters using the new parser
+          (let* ((parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
+                                (parse-lambda-list-cst lambda-list-cst :context :ordinary) ; defsetf long form LL is ordinary
+                                nil))
                  (detailed-params '()))
-            (multiple-value-setq (required optionals rest-name keywords allow-other-p auxs)
-              (alexandria:parse-ordinary-lambda-list raw-ll :normalize t))
+            (when parsed-ll
+              ;; First, collect all parameter plists for the local 'parameters' variable
+              (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+              (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+              (let ((rest-p (getf parsed-ll :rest)))
+                (when rest-p (push rest-p detailed-params)))
+              (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+              (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+              (setf parameters (nreverse detailed-params)) ;; This 'parameters' is for the defsetf-analysis slot
+              (setf (analysis-lambda-info analysis) parsed-ll))
 
-            (dolist (r required)
-              (push (list :name r :kind :required) detailed-params)
-              (pushnew r (analysis-lexical-definitions analysis) :test #'eq))
-            (dolist (o optionals)
-              (let ((opt-name (first o)) (opt-init (second o)) (opt-sp (third o)))
-                (push (list :name opt-name :kind :optional :default-value opt-init :supplied-p-variable opt-sp) detailed-params)
-                (pushnew opt-name (analysis-lexical-definitions analysis) :test #'eq)
-                (when opt-sp (pushnew opt-sp (analysis-lexical-definitions analysis) :test #'eq))))
-            (when rest-name
-              (push (list :name rest-name :kind :rest) detailed-params)
-              (pushnew rest-name (analysis-lexical-definitions analysis) :test #'eq))
-            (dolist (k keywords)
-              (let* ((kw-pair (first k)) (kw-varname (second kw-pair)) (kw-init (second k)) (kw-sp (third k)))
-                (push (list :name kw-varname :kind :key :default-value kw-init :supplied-p-variable kw-sp) detailed-params)
-                (pushnew kw-varname (analysis-lexical-definitions analysis) :test #'eq)
-                (when kw-sp (pushnew kw-sp (analysis-lexical-definitions analysis) :test #'eq))))
-            (dolist (a auxs)
-              (let ((aux-name (first a)) (aux-init (second a)))
-                (push (list :name aux-name :kind :aux :default-value aux-init) detailed-params)
-                (pushnew aux-name (analysis-lexical-definitions analysis) :test #'eq)))
-            (setf parameters (nreverse detailed-params))
-            (setf (analysis-lambda-info analysis)
-                  (list :required required :optionals optionals :rest rest-name :keywords keywords :allow-other-keys allow-other-p :auxs auxs)))
+            ;; Now, iterate over the collected parameter details (stored in local 'parameters')
+            ;; to apply the new helper functions.
+            (dolist (p parameters)
+              (process-parameter-lexical-defs p analysis)
+              (process-parameter-csts p analysis :ordinary)
+              (when (getf p :destructured)
+                (process-destructured-parameter p analysis :ordinary))))
 
           ;; Extract store variables
           (when (and store-vars-cst (concrete-syntax-tree:consp store-vars-cst))
             (setf store-vars (mapcar #'concrete-syntax-tree:raw (cst:listify store-vars-cst)))
             (dolist (sv store-vars)
               (when (symbolp sv)
-                (pushnew sv (analysis-lexical-definitions analysis) :test #'eq))))
+                (pushnew sv (analysis-lexical-definitions analysis) :test #'eq)))) ; CORRECTED SLOT HERE TOO
           (setf (analysis-store-variables analysis) store-vars)
 
           ;; Extract docstring and body
@@ -1548,4 +1253,3 @@ analysis))
 
 (defmethod make-analyzer ((type (eql 'defgeneric)))
   (make-instance 'defgeneric-analysis))
-
