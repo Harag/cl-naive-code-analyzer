@@ -106,6 +106,7 @@
                 (list :name raw :kind :required :error "Malformed specialized parameter")))
             (list :name (concrete-syntax-tree:raw (first children))
                   :kind :required
+                  :type-specifier-cst (second children) ; Store the CST
                   :type-specifier (concrete-syntax-tree:raw (second children)))))
          ;; Destructuring list in :macro or :deftype context (or potentially :ordinary if allowed)
          ((and (member context '(:macro :deftype :ordinary)) ; :ordinary might allow destructuring too

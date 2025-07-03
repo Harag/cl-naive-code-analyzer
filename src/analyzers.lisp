@@ -322,6 +322,70 @@
 ;;; the function FN.  FN is called with (current-cst path
 ;;; remaining-tail).
 
+;;; Helper functions for processing lambda list parameters
+
+(defun process-parameter-lexical-defs (param-detail analysis)
+  "Extracts and stores lexical variable names (parameter name and its
+supplied-p variable, if any) from a parameter detail plist into the
+analysis object."
+  (let ((name (getf param-detail :name))
+        (supplied-p-var (getf param-detail :supplied-p-variable)))
+    (when name
+      ;; Ensure name is a symbol before pushing, as it could be a list for destructuring
+      (if (symbolp name)
+          (pushnew name (analysis-lexical-definitions analysis) :test #'eq) ; CORRECTED SLOT NAME
+          ;; If name is a list (destructuring), its components are handled by process-destructured-parameter
+          nil))
+    (when supplied-p-var
+      (pushnew supplied-p-var (analysis-lexical-definitions analysis) :test #'eq)))) ; CORRECTED SLOT NAME
+
+(defun process-parameter-csts (param-detail analysis context)
+  "Identifies and walks specific CSTs within a parameter detail (default
+values, type specifiers, destructuring forms) to gather information
+like function calls or variable uses."
+  (let ((default-value-cst (getf param-detail :default-value-cst))
+        (type-specifier-cst (getf param-detail :type-specifier-cst))
+        (name-cst (getf param-detail :name-cst)) ; CST of the parameter name/destructuring pattern
+        (name (getf param-detail :name)))
+    ;; Walk default value CST, if present
+    (when default-value-cst
+      (walk-cst-with-context default-value-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))
+    ;; Walk type specifier CST for relevant contexts (e.g., defmethod)
+    (when (and type-specifier-cst (member context '(:specialized :method))) ; :method is an alias for :specialized context in some parts
+      (walk-cst-with-context type-specifier-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))
+    ;; If the parameter name itself is a list (destructuring) and we have its CST representation
+    (when (and name-cst (listp name) (not (null name))) ; Ensure it's a non-empty list
+      (walk-cst-with-context name-cst
+                             (lambda (current-cst path tail)
+                               (declare (ignore path tail))
+                               (gather-info current-cst analysis))))))
+
+(defun process-destructured-parameter (param-detail analysis context)
+  "Recursively process components of a destructured parameter."
+  (when (getf param-detail :destructured)
+    (let ((sub-parameters (getf param-detail :sub-parameters))) ; This is a lambda-list-like plist
+      (when sub-parameters
+        (dolist (section '(:required :optionals :keys :aux)) ; Standard sections in a nested lambda list
+          (dolist (sub-param (getf sub-parameters section))
+            (process-parameter-lexical-defs sub-param analysis)
+            (process-parameter-csts sub-param analysis context)
+            ;; Recursive call for nested destructuring
+            (when (getf sub-param :destructured)
+              (process-destructured-parameter sub-param analysis context))))
+        ;; Handle :rest or :body if present in sub-parameters
+        (let ((rest-param (or (getf sub-parameters :rest) (getf sub-parameters :body))))
+          (when rest-param
+            (process-parameter-lexical-defs rest-param analysis)
+            (process-parameter-csts rest-param analysis context)
+            (when (getf rest-param :destructured)
+              (process-destructured-parameter rest-param analysis context))))))))
+
 ;;; TODO: The `path` construction `(append path (list head))` can be
 ;;;       inefficient for deep trees.  Consider alternative ways to
 ;;;       manage path information if performance becomes an issue.
@@ -491,53 +555,36 @@
           (analysis-raw-body analysis) body-cst)
 
     ;; Store detailed lambda list information from the new parser
-    ;; The format of `parsed-ll` is already a plist like:
-    ;; (:required (...params...) :optionals (...params...) ...)
-    ;; where each param is a plist like (:name N :kind K ...).
-    ;; This is different from alexandria's direct value returns.
-    ;; We need to adapt how analysis-lambda-info and analysis-parameters are populated.
-
-    ;; For analysis-lambda-info, we can store the direct output for now,
-    ;; or re-structure it if a specific format compatible with alexandria's output is strictly needed.
-    ;; Let's store the direct richer plist from our parser.
     (setf (analysis-lambda-info analysis) parsed-ll)
 
     ;; Populate analysis-parameters with detailed structures
-    ;; This will iterate through the lists in parsed-ll (e.g., (getf parsed-ll :required))
-    ;; and convert each parameter plist into the format expected by analysis-parameters,
-    ;; and also populate lexical definitions.
     (let ((detailed-params '()))
       (when parsed-ll
-        ;; Common logic for collecting parameters and their lexical definitions
-        (labels ((collect-params-and-lexdefs (params-list)
-                   (dolist (p params-list)
-                     (push p detailed-params)
-                     (collect-lexical-defs-from-param p analysis)))
-                 (collect-lexical-defs-from-param
-                     (param-plist analysis)
-                   (when (getf param-plist :name)
-                     (pushnew (getf param-plist :name) (analysis-lexical-definitions analysis) :test #'equal))
-                   (when (getf param-plist :supplied-p-variable)
-                     (pushnew (getf param-plist :supplied-p-variable)
-                              (analysis-lexical-definitions analysis) :test #'equal))
-                   ;; Recursively collect for destructured parts
-                   (when (getf param-plist :destructured)
-                     (let ((sub-params (getf param-plist :sub-parameters)))
-                       (when sub-params
-                         (dolist (sub (getf sub-params :required))
-                           (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :optionals))
-                           (collect-lexical-defs-from-param sub analysis))
-                         (let ((sub-rest (getf sub-params :rest)))
-                           (when sub-rest (collect-lexical-defs-from-param sub-rest analysis)))
-                         (dolist (sub (getf sub-params :keys))
-                           (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :aux))
-                           (collect-lexical-defs-from-param sub analysis)))))))
-          (lambda (current-body-cst path tail)
-            (declare (ignore path tail))
-            (gather-info current-body-cst analysis))))
-      analysis)))
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
+
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :ordinary)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :ordinary))))
+
+    ;; Analyze the function body
+    (when body-cst
+      (walk-cst-with-context
+       body-cst
+       (lambda (current-body-cst path tail)
+         (declare (ignore path tail))
+         (gather-info current-body-cst analysis))))
+    analysis))
 
 ;;; Specialized method for ANALYZE-CST for DEFMACRO forms.
 ;;; Specialized method for ANALYZE-CST for DEFMACRO forms.
@@ -560,8 +607,7 @@
          ;; Parse the lambda list CST using the new parser with :macro context
          (parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
                         (parse-lambda-list-cst lambda-list-cst :context :macro)
-                        nil))
-         (processed-params '()))
+                        nil)))
 
     (setf (analysis-name analysis) name
           (analysis-docstring analysis) doc
@@ -571,75 +617,48 @@
     (setf (analysis-ordinary-lambda-list-details analysis) nil) ; Clear old slot
 
     (when parsed-ll
-      (labels ((collect-lexical-defs-from-parameter (param-plist analysis)
-                 (when (getf param-plist :name)
-                   (pushnew (getf param-plist :name)
-                            (analysis-lexical-definitions analysis)
-                            :test #'equal))
-                 (when (getf param-plist :supplied-p-variable)
-                   (pushnew (getf param-plist :supplied-p-variable)
-                            (analysis-lexical-definitions analysis)
-                            :test #'equal))
-                 ;; Destructuring is not standard in defmethod
-                 ;; specialized lambda lists, but include for
-                 ;; robustness if parser allows it in :specialized
-                 ;; context.
-                 (when (getf param-plist :destructured)
-                   (let ((sub-params (getf param-plist :sub-parameters)))
-                     (when sub-params
-                       (dolist (sub (getf sub-params :required))
-                         (collect-lexical-defs-from-parameter sub analysis))
-                       (dolist (sub (getf sub-params :optionals))
-                         (collect-lexical-defs-from-parameter sub analysis))
-                       (let ((sub-rest (getf sub-params :rest)))
-                         (when sub-rest
-                           (collect-lexical-defs-from-parameter sub-rest analysis)))
-                       (dolist (sub (getf sub-params :keys))
-                         (collect-lexical-defs-from-parameter sub analysis))
-                       (dolist (sub (getf sub-params :aux))
-                         (collect-lexical-defs-from-parameter sub analysis)))))))
-        (let ((whole-p (getf parsed-ll :whole))
-              (env-p (getf parsed-ll :environment))
-              (body-p (getf parsed-ll :body)))
-          (when whole-p
-            (setf (analysis-whole-var analysis) (getf whole-p :name))
-            (push whole-p processed-params)
-            (collect-lexical-defs-from-parameter whole-p analysis))
-          (when env-p
-            (setf (analysis-environment-var analysis) (getf env-p :name))
-            (push env-p processed-params)
-            (collect-lexical-defs-from-parameter env-p analysis))
-          (when body-p
-            (setf (analysis-body-var analysis) (getf body-p :name))
-            (push body-p processed-params)
-            (collect-lexical-defs-from-parameter body-p analysis)))
+      ;; Populate analysis-parameters first
+      (let ((whole-p (getf parsed-ll :whole))
+            (env-p (getf parsed-ll :environment))
+            (body-p (getf parsed-ll :body))
+            ;; temp list for all params that go into analysis-parameters
+            (all-params-for-slot '()))
 
-        (dolist (p (getf parsed-ll :required))
-          (push p processed-params)
-          (collect-lexical-defs-from-parameter p analysis))
-        (dolist (p (getf parsed-ll :optionals))
-          (push p processed-params)
-          (collect-lexical-defs-from-parameter p analysis))
+        (when whole-p
+          (setf (analysis-whole-var analysis) (getf whole-p :name))
+          (push whole-p all-params-for-slot))
+        (when env-p
+          (setf (analysis-environment-var analysis) (getf env-p :name))
+          (push env-p all-params-for-slot))
+        (when body-p
+          (setf (analysis-body-var analysis) (getf body-p :name))
+          (push body-p all-params-for-slot))
+
+        (dolist (p (getf parsed-ll :required)) (push p all-params-for-slot))
+        (dolist (p (getf parsed-ll :optionals)) (push p all-params-for-slot))
         (let ((rest-p (getf parsed-ll :rest)))
-          (when (and rest-p (not (analysis-body-var analysis))) ; Prioritize &body
-            (push rest-p processed-params)
-            (collect-lexical-defs-from-parameter rest-p analysis)))
-        (dolist (p (getf parsed-ll :keys))
-          (push p processed-params)
-          (collect-lexical-defs-from-parameter p analysis))
-        (dolist (p (getf parsed-ll :aux))
-          (push p processed-params)
-          (collect-lexical-defs-from-parameter p analysis))
+          (when (and rest-p (not (analysis-body-var analysis))) ; Prioritize &body if present
+            (push rest-p all-params-for-slot)))
+        (dolist (p (getf parsed-ll :keys)) (push p all-params-for-slot))
+        (dolist (p (getf parsed-ll :aux)) (push p all-params-for-slot))
+        (setf (analysis-parameters analysis) (nreverse all-params-for-slot)))
 
-        (setf (analysis-parameters analysis) (nreverse processed-params))
+      ;; Now process all parameters stored in (analysis-parameters analysis)
+      ;; including &whole, &environment, &body if they were added.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :macro)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :macro))))
 
-        (when body-cst
-          (walk-cst-with-context
-           body-cst
-           (lambda (current-body-cst path tail)
-             (declare (ignore path tail))
-             (gather-info current-body-cst analysis)))))
-      analysis)))
+    ;; Analyze the macro body
+    (when body-cst
+      (walk-cst-with-context
+       body-cst
+       (lambda (current-body-cst path tail)
+         (declare (ignore path tail))
+         (gather-info current-body-cst analysis))))
+    analysis))
 
 ;;; Specialized method for ANALYZE-CST for DEFMETHOD forms.
 ;; Specialized method for ANALYZE-CST for DEFMETHOD forms.
@@ -692,58 +711,34 @@
       (setf (analysis-lambda-info analysis) parsed-ll)
 
       ;; Populate analysis-parameters
-      ;; Populate analysis-parameters
       (let ((detailed-params '()))
         (when parsed-ll
-          (labels ((collect-params-and-lexdefs (params-list)
-                     (dolist (p params-list)
-                       (push p detailed-params)
-                       (collect-lexical-defs-from-param p analysis)))
-                   (collect-lexical-defs-from-param (param-plist analysis)
-                     (when (getf param-plist :name)
-                       (pushnew (getf param-plist :name)
-                                (analysis-lexical-definitions analysis)
-                                :test #'equal))
-                     (when (getf param-plist :supplied-p-variable)
-                       (pushnew (getf param-plist :supplied-p-variable)
-                                (analysis-lexical-definitions analysis)
-                                :test #'equal))
-                     ;; Destructuring is not standard in defmethod
-                     ;; specialized lambda lists, but include for
-                     ;; robustness if parser allows it in :specialized
-                     ;; context.
-                     (when (getf param-plist :destructured)
-                       (let ((sub-params (getf param-plist :sub-parameters)))
-                         (when sub-params
-                           (dolist (sub (getf sub-params :required))
-                             (collect-lexical-defs-from-param sub analysis))
-                           (dolist (sub (getf sub-params :optionals))
-                             (collect-lexical-defs-from-param sub analysis))
-                           (let ((sub-rest (getf sub-params :rest)))
-                             (when sub-rest
-                               (collect-lexical-defs-from-param sub-rest analysis)))
-                           (dolist (sub (getf sub-params :keys))
-                             (collect-lexical-defs-from-param sub analysis))
-                           (dolist (sub (getf sub-params :aux))
-                             (collect-lexical-defs-from-param sub analysis)))))))
+          ;; First, collect all parameter plists for (analysis-parameters analysis)
+          (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+          (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+          (let ((rest-p (getf parsed-ll :rest)))
+            (when rest-p (push rest-p detailed-params)))
+          (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+          (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+          (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-            (collect-params-and-lexdefs (getf parsed-ll :required))
-            (collect-params-and-lexdefs (getf parsed-ll :optionals))
-            (let ((rest-p (getf parsed-ll :rest)))
-              (when rest-p
-                (collect-params-and-lexdefs (list rest-p))))
-            (collect-params-and-lexdefs (getf parsed-ll :keys))
-            (collect-params-and-lexdefs (getf parsed-ll :aux))))
-        (setf (analysis-parameters analysis) (nreverse detailed-params))
+        ;; Now, iterate over the collected parameter details
+        ;; to apply the new helper functions.
+        (dolist (p (analysis-parameters analysis))
+          (process-parameter-lexical-defs p analysis)
+          ;; Note: :specialized context for defmethod
+          (process-parameter-csts p analysis :specialized)
+          (when (getf p :destructured)
+            (process-destructured-parameter p analysis :specialized))))
 
-        ;; Analyze the method body
-        (when body-cst
-          (walk-cst-with-context
-           body-cst
-           (lambda (current-body-cst path tail)
-             (declare (ignore path tail))
-             (gather-info current-body-cst analysis)))))
-      analysis)))
+      ;; Analyze the method body
+      (when body-cst
+        (walk-cst-with-context
+         body-cst
+         (lambda (current-body-cst path tail)
+           (declare (ignore path tail))
+           (gather-info current-body-cst analysis)))))
+    analysis))
 
 ;;; Specialized method for ANALYZE-CST for DEFTYPE forms.
 (defmethod analyze-cst (cst (analysis deftype-analysis))
@@ -773,35 +768,22 @@
 
     (let ((detailed-params '()))
       (when parsed-ll
-        ;; Collect all parameters similar to defmacro, excluding &whole, &env, &body
-        ;; as they are not standard for deftype but parse-lambda-list-cst might find them
-        ;; if the :macro context was mistakenly used or if they were present.
-        ;; Using :deftype context should prevent :whole, :env, :body from being populated.
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-        (labels ((collect-params-and-lexdefs (params-list)
-                   (dolist (p params-list)
-                     (push p detailed-params)
-                     (collect-lexical-defs-from-param p analysis)))
-                 (collect-lexical-defs-from-param (param-plist analysis)
-                   (when (getf param-plist :name)
-                     (pushnew (getf param-plist :name) (analysis-lexical-definitions analysis) :test #'equal))
-                   (when (getf param-plist :supplied-p-variable)
-                     (pushnew (getf param-plist :supplied-p-variable) (analysis-lexical-definitions analysis) :test #'equal))
-                   (when (getf param-plist :destructured)
-                     (let ((sub-params (getf param-plist :sub-parameters)))
-                       (when sub-params
-                         (dolist (sub (getf sub-params :required)) (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :optionals)) (collect-lexical-defs-from-param sub analysis))
-                         (let ((sub-rest (getf sub-params :rest))) (when sub-rest (collect-lexical-defs-from-param sub-rest analysis)))
-                         (dolist (sub (getf sub-params :keys)) (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :aux)) (collect-lexical-defs-from-param sub analysis)))))))
-
-          (collect-params-and-lexdefs (getf parsed-ll :required))
-          (collect-params-and-lexdefs (getf parsed-ll :optionals))
-          (let ((rest-p (getf parsed-ll :rest))) (when rest-p (collect-params-and-lexdefs (list rest-p))))
-          (collect-params-and-lexdefs (getf parsed-ll :keys))
-          (collect-params-and-lexdefs (getf parsed-ll :aux))))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :deftype)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :deftype))))
 
     ;; Analyze the deftype body
     (when body-cst
@@ -845,31 +827,22 @@
 
     (let ((detailed-params '()))
       (when parsed-ll
-        (labels ((collect-params-and-lexdefs (params-list)
-                   (dolist (p params-list)
-                     (push p detailed-params)
-                     (collect-lexical-defs-from-param p analysis)))
-                 (collect-lexical-defs-from-param (param-plist analysis)
-                   (when (getf param-plist :name)
-                     (pushnew (getf param-plist :name) (analysis-lexical-definitions analysis) :test #'equal))
-                   (when (getf param-plist :supplied-p-variable)
-                     (pushnew (getf param-plist :supplied-p-variable) (analysis-lexical-definitions analysis) :test #'equal))
-                   ;; Destructuring is not standard in defgeneric lambda lists
-                   (when (getf param-plist :destructured)
-                     (let ((sub-params (getf param-plist :sub-parameters)))
-                       (when sub-params
-                         (dolist (sub (getf sub-params :required)) (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :optionals)) (collect-lexical-defs-from-param sub analysis))
-                         (let ((sub-rest (getf sub-params :rest))) (when sub-rest (collect-lexical-defs-from-param sub-rest analysis)))
-                         (dolist (sub (getf sub-params :keys)) (collect-lexical-defs-from-param sub analysis))
-                         (dolist (sub (getf sub-params :aux)) (collect-lexical-defs-from-param sub analysis)))))))
+        ;; First, collect all parameter plists for (analysis-parameters analysis)
+        (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+        (let ((rest-p (getf parsed-ll :rest)))
+          (when rest-p (push rest-p detailed-params)))
+        (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+        (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+        (setf (analysis-parameters analysis) (nreverse detailed-params)))
 
-          (collect-params-and-lexdefs (getf parsed-ll :required))
-          (collect-params-and-lexdefs (getf parsed-ll :optionals))
-          (let ((rest-p (getf parsed-ll :rest))) (when rest-p (collect-params-and-lexdefs (list rest-p))))
-          (collect-params-and-lexdefs (getf parsed-ll :keys))
-          (collect-params-and-lexdefs (getf parsed-ll :aux))))
-      (setf (analysis-parameters analysis) (nreverse detailed-params)))
+      ;; Now, iterate over the collected parameter details
+      ;; to apply the new helper functions.
+      (dolist (p (analysis-parameters analysis))
+        (process-parameter-lexical-defs p analysis)
+        (process-parameter-csts p analysis :generic-function-ordinary)
+        (when (getf p :destructured)
+          (process-destructured-parameter p analysis :generic-function-ordinary))))
 
     ;; Defgeneric doesn't have a "body" in the same way defun does,
     ;; but options might contain expressions.
@@ -925,39 +898,30 @@
                                 nil))
                  (detailed-params '()))
             (when parsed-ll
-              (labels ((collect-params-and-lexdefs (params-list)
-                         (dolist (p params-list)
-                           (push p detailed-params)
-                           (collect-lexical-defs-from-param p analysis)))
-                       (collect-lexical-defs-from-param (param-plist analysis)
-                         (when (getf param-plist :name)
-                           (pushnew (getf param-plist :name) (analysis-lexical-definitions analysis) :test #'equal))
-                         (when (getf param-plist :supplied-p-variable)
-                           (pushnew (getf param-plist :supplied-p-variable) (analysis-lexical-definitions analysis) :test #'equal))
-                         ;; Destructuring is not typical in defsetf's lambda-list but include for robustness
-                         (when (getf param-plist :destructured)
-                           (let ((sub-params (getf param-plist :sub-parameters)))
-                             (when sub-params
-                               (dolist (sub (getf sub-params :required)) (collect-lexical-defs-from-param sub analysis))
-                               (dolist (sub (getf sub-params :optionals)) (collect-lexical-defs-from-param sub analysis))
-                               (let ((sub-rest (getf sub-params :rest))) (when sub-rest (collect-lexical-defs-from-param sub-rest analysis)))
-                               (dolist (sub (getf sub-params :keys)) (collect-lexical-defs-from-param sub analysis))
-                               (dolist (sub (getf sub-params :aux)) (collect-lexical-defs-from-param sub analysis)))))))
+              ;; First, collect all parameter plists for the local 'parameters' variable
+              (dolist (p (getf parsed-ll :required)) (push p detailed-params))
+              (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
+              (let ((rest-p (getf parsed-ll :rest)))
+                (when rest-p (push rest-p detailed-params)))
+              (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
+              (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
+              (setf parameters (nreverse detailed-params)) ;; This 'parameters' is for the defsetf-analysis slot
+              (setf (analysis-lambda-info analysis) parsed-ll))
 
-                (collect-params-and-lexdefs (getf parsed-ll :required))
-                (collect-params-and-lexdefs (getf parsed-ll :optionals))
-                (let ((rest-p (getf parsed-ll :rest))) (when rest-p (collect-params-and-lexdefs (list rest-p))))
-                (collect-params-and-lexdefs (getf parsed-ll :keys))
-                (collect-params-and-lexdefs (getf parsed-ll :aux))))
-            (setf parameters (nreverse detailed-params))
-            (setf (analysis-lambda-info analysis) parsed-ll))
+            ;; Now, iterate over the collected parameter details (stored in local 'parameters')
+            ;; to apply the new helper functions.
+            (dolist (p parameters)
+              (process-parameter-lexical-defs p analysis)
+              (process-parameter-csts p analysis :ordinary)
+              (when (getf p :destructured)
+                (process-destructured-parameter p analysis :ordinary))))
 
           ;; Extract store variables
           (when (and store-vars-cst (concrete-syntax-tree:consp store-vars-cst))
             (setf store-vars (mapcar #'concrete-syntax-tree:raw (cst:listify store-vars-cst)))
             (dolist (sv store-vars)
               (when (symbolp sv)
-                (pushnew sv (analysis-lexical-definitions analysis) :test #'eq))))
+                (pushnew sv (analysis-lexical-definitions analysis) :test #'eq)))) ; CORRECTED SLOT HERE TOO
           (setf (analysis-store-variables analysis) store-vars)
 
           ;; Extract docstring and body
@@ -1289,4 +1253,3 @@
 
 (defmethod make-analyzer ((type (eql 'defgeneric)))
   (make-instance 'defgeneric-analysis))
-

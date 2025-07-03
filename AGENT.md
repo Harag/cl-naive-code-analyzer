@@ -20,12 +20,41 @@ query the information.
 
 Instructions about how and when to make comments.
 
-1. Do not put any comments at the end of code lines like (....) ;comment. 
+1. DO NOT PUT ANY COMMENTS AT THE END OF CODE LINES LIKE (....) ;COMMENT. 
 2. Do not put comments when the code is clear on its own already. For example (if (not x) 1 2) ;Checks if x is nil.
 3. Do not put any comments before a ) even if its on a seperate line like below. My emacs configuration rolls up dangling ), which means if there is a preceding comment the ) becomes commented out.
 ```
 ;;coment
 )
+```
+## Plans
+
+Give me detail!
+
+This is an excelent example of a detailed plan. Please just make a mental note of the level of detail but dont go and store this example plan in memory because then you are going to accidentally internalize irrellevant details contained in it which will confuse you later.
+
+```
+Here's a proposed plan:
+
+Modify analyze-cst methods for relevant definition types (e.g., defun-analysis, defmacro-analysis, defmethod-analysis, deftype-analysis, defgeneric-analysis, defsetf-analysis long form):
+
+After parse-lambda-list-cst is called and the lambda list details (including :default-value-cst for optionals, keys, aux, and potentially sub-parameters for destructuring) are available:
+Iterate through these parameters.
+For each parameter that has a default value represented by a CST, or for each component of a destructuring pattern that is itself a lambda list:
+Call walk-cst-with-context (or a similar appropriate walker) on that CST, passing the main analysis object so that gather-info populates its function-calls, macro-calls, variable-uses, etc., slots with findings from within these default values/destructured parts.
+Adjust the write-analysis methods for these definition types (or how lambda-info is prepared for writing):
+
+When serializing the analysis-lambda-info slot (or the parameters slot that's derived from it) to the log file:
+Ensure that the actual default value expressions (which were originally CSTs) are now converted to strings using (format nil "~S" (concrete-syntax-tree:raw THE_DEFAULT_VALUE_CST)) before being written.
+This means the log will store a string representation of the default value, while the queryable details (calls, uses) from within it will have been merged into the main analysis object's collections.
+Test:
+
+Re-run the analysis: sbcl --noinform --non-interactive --load /home/jules/quicklisp/setup.lisp --eval '(push #p"./" ql:*local-project-directories*)' --eval '(ql:quickload :cl-naive-code-analyzer)' --eval '(cl-naive-code-analyzer:analyze-project "test-code" "tests/test-code/")'
+Verify that the analysis completes without the malformed property list error from cl-naive-store (as the problematic forms should now be strings).
+Inspect the code-definitions.log to confirm:
+Default values like (* TEST-PACKAGE-SIMPLE::X 2) are now stored as strings (e.g., "(* TEST-PACKAGE-SIMPLE::X 2)").
+Function calls/variable uses from within these default values (e.g., the * function call) are correctly listed in the main :function-calls property of the defun's analysis entry.
+Does this plan accurately reflect the agreed-upon Path A and cover the necessary steps?
 ```
 
 ## Depth of analysis
@@ -53,7 +82,7 @@ sbcl --noinform --no-userinit --non-interactive \
 ```
 ## Code Style
 
-1. Dont put flow functions like if, when, unless on ONE LINE.
+1. Dont put code like if, when, unless, lambda, dolist etc on ONE LINE like this ```(lambda (c c-path c-tail) (declare (ignore c-path c-tail)) (gather-info c analysis))```. Lisp code was designed to be read by humans, think python with brackets. 
 2. Use full descriptive variable names.
 3. Don't excede 80 chars on a line.
 4. When defining class slots use constistent order of options ([slot name] [initarg] [accessor] [iniform] [documentation])
@@ -66,6 +95,7 @@ sbcl --noinform --no-userinit --non-interactive \
 			  :documentation 
 			  [documentation])
 ```
+6. Do not block format code with whitespace padding like this ``` (name         (concrete-syntax-tree:raw name-cst))```
 
 ## Where is the code
 

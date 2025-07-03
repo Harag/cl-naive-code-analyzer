@@ -13,10 +13,10 @@
   :licence "MIT"
   :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store alexandria)
   :components ((:file "src/package")
+               (:file "src/lambda-list-parser"
+                :depends-on ("src/package"))
                (:file "src/utils"
                 :depends-on ("src/package"))
-               (:file "src/lambda-list-parser"
-                :depends-on ("src/utils"))
                (:file "src/naive-store"
                 :depends-on ("src/utils"))
                (:file "src/analyzers"

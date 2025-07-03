@@ -126,7 +126,9 @@
                                    (serialized-name-spec (serialize-param-name-and-specializer name-part)))
                               ;; Merge the :name and :specializer with other optional parts
                               `(,@serialized-name-spec
-                                :init-form ,init-form ;; TODO: Serialize init-form? For now, keeping raw.
+                                :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                                (format nil "~S" init-form)
+                                                init-form)
                                 :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                           (getf lambda-info :optionals))
       :rest ,(when (getf lambda-info :rest)
@@ -140,7 +142,9 @@
                                   (serialized-var-name-spec (serialize-param-name-and-specializer var-name-part)))
                              `(,@serialized-var-name-spec
                                :keyword ,keyword-name
-                               :init-form ,init-form ;; TODO: Serialize init-form?
+                               :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                               (format nil "~S" init-form)
+                                               init-form)
                                :supplied-p-var ,(when supplied-p (export-symbol supplied-p)))))
                          (getf lambda-info :keywords))
       :allow-other-keys ,(getf lambda-info :allow-other-keys)
@@ -149,7 +153,9 @@
                               (init-form (second aux)))
                           ;; Aux vars don't have specializers
                           `(:name ,(export-symbol name)
-                            :init-form ,init-form))) ;; TODO: Serialize init-form?
+                            :init-form ,(if (or (symbolp init-form) (consp init-form))
+                                            (format nil "~S" init-form)
+                                            init-form))))
                       (getf lambda-info :auxes)))))
 
 ;;; Specialized WRITE-ANALYSIS methods for different definition types.
