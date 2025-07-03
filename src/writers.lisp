@@ -1,8 +1,12 @@
 (in-package :cl-naive-code-analyzer)
 
 (defmethod write-analysis :around((a analysis) filename &key)
-  (let ((*export-symbol-standin* (analysis-package a)))
-    (call-next-method)))
+  (let ((pkg (analysis-package a)))
+    (let ((*export-symbol-standin*
+            (if (packagep pkg)
+                (package-name pkg)
+                pkg)))
+      (call-next-method))))
 
 ;;; Default method for WRITE-ANALYSIS. Serializes generic slots common
 ;;; to all analysis types.  Subclasses specialize this method to add
