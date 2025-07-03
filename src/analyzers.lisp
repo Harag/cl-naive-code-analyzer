@@ -660,101 +660,97 @@ like function calls or variable uses."
          (gather-info current-body-cst analysis))))
     analysis))
 
-;;; Specialized method for ANALYZE-CST for DEFMETHOD forms.
-;; Specialized method for ANALYZE-CST for DEFMETHOD forms.
-(defmethod analyze-cst (cst (analysis defmethod-analysis))
-  "Analyzes a DEFMETHOD CST to extract name, qualifiers, specialized lambda list, docstring, and body.
-   Populates the DEFMETHOD-ANALYSIS object."
-  (let* (;; Name or (SETF name)
-         (name-cst (concrete-syntax-tree:second cst))
-         ;; Start looking for qualifiers or args list from the 3rd element (index 2)
-         (index 2)
-         (part     (concrete-syntax-tree:nth index cst))
-         (method-qualifier nil))
-    ;; Extract the single method qualifier, if present
-    (when (and part
-               (concrete-syntax-tree:atom part)
-               (keywordp (concrete-syntax-tree:raw part))
-               (member (concrete-syntax-tree:raw part) '(:before :after :around))) ; Check if it's a standard qualifier
-      (setf method-qualifier (concrete-syntax-tree:raw part))
-      (incf index)
-      (setf part (concrete-syntax-tree:nth index cst)))
-    (setf (analysis-method-qualifier analysis) method-qualifier)
+(defmethod analyze-cst (cst (analysis defparameter-analysis))
+  "Analyzes a DEFPARAMETER/DEFVAR/DEFCONSTANT CST to extract name, initial value, and docstring.
+   Populates the DEFPARAMETER-ANALYSIS object."
+  (let* ((name-cst (concrete-syntax-tree:second cst)) ; Assume cst:second is safe for list of length >= 2
+         (raw-name (concrete-syntax-tree:raw name-cst))
+         (init-form-cst nil)
+         (docstring nil)
+         ;; Get CST for arguments after the name (potential init-val and docstring)
+         ;; For (DEFVAR name), arg-list-cst will be a CST representing NIL (an ATOM-CST).
+         (arg-list-cst (concrete-syntax-tree:nthrest 2 cst)))
 
-    ;; After the optional qualifier, 'part' should be the args-cst
-    (let* ((args-cst     part)
-           (next-idx (+ index 1)) ; Index for possible docstring
-           (possible-doc (concrete-syntax-tree:nth next-idx cst))
-           (doc(when (and possible-doc
-                          (concrete-syntax-tree:atom possible-doc)
-                          (stringp (concrete-syntax-tree:raw possible-doc)))
-                 (concrete-syntax-tree:raw possible-doc)))
-           (body-cst (if doc
-                         (concrete-syntax-tree:nthrest (+ next-idx 1) cst)
-                         (concrete-syntax-tree:nthrest next-idx cst)))
-           (name (real-raw name-cst)) ; Handles (SETF name) correctly
-           (lambda-list-cst (and args-cst
-                                 (concrete-syntax-tree:consp args-cst)
-                                 ;; No need to mapcar raw here, parser takes CST
-                                 args-cst))
-           ;; Parse the lambda list CST using the new parser
-           (parsed-ll (if (and lambda-list-cst
-                               (concrete-syntax-tree:consp lambda-list-cst))
-                          (parse-lambda-list-cst lambda-list-cst :context :specialized)
-                          nil)))
+    ;; Check if arg-list-cst is a proper list (CONS-CST) and not NIL (ATOM-CST)
+    (if (and arg-list-cst (concrete-syntax-tree:consp arg-list-cst))
+        (let ((first-arg-cst (concrete-syntax-tree:first arg-list-cst))
+              (rest-args-cst (concrete-syntax-tree:rest arg-list-cst)))
+          (if (eq (analysis-kind analysis) 'defvar)
+              ;; Parsing logic for DEFVAR:
+              ;;   DEFVAR var
+              ;;   DEFVAR var initial-value
+              ;;   DEFVAR var "documentation"
+              ;;   DEFVAR var initial-value "documentation"
+              (if (and (concrete-syntax-tree:atom first-arg-cst)
+                       (stringp (concrete-syntax-tree:raw first-arg-cst))
+                       (or (not rest-args-cst) (concrete-syntax-tree:null rest-args-cst)))
+                  ;; Case: (DEFVAR var "documentation")
+                  (setf docstring (concrete-syntax-tree:raw first-arg-cst))
+                  ;; Case: (DEFVAR var initial-value ...) or (DEFVAR var non-string-initial-value)
+                  (progn
+                    (setf init-form-cst first-arg-cst)
+                    ;; Check for documentation string after initial-value
+                    (when (and rest-args-cst (concrete-syntax-tree:consp rest-args-cst))
+                      (let ((doc-candidate-cst (concrete-syntax-tree:first rest-args-cst)))
+                        ;; Ensure it's a string and it's the last element.
+                        (when (and (concrete-syntax-tree:atom doc-candidate-cst)
+                                   (stringp (concrete-syntax-tree:raw doc-candidate-cst))
+                                   (or (not (concrete-syntax-tree:rest rest-args-cst))
+                                       (concrete-syntax-tree:null (concrete-syntax-tree:rest rest-args-cst))))
+                          (setf docstring (concrete-syntax-tree:raw doc-candidate-cst)))))))
+              ;; Parsing logic for DEFPARAMETER and DEFCONSTANT:
+              ;;   DEFPARAMETER var initial-value
+              ;;   DEFPARAMETER var initial-value "documentation"
+              ;; initial-value is mandatory.
+              (progn
+                (setf init-form-cst first-arg-cst)
+                ;; Check for documentation string after initial-value
+                (when (and rest-args-cst (concrete-syntax-tree:consp rest-args-cst))
+                  (let ((doc-candidate-cst (concrete-syntax-tree:first rest-args-cst)))
+                    ;; Ensure it's a string and it's the last element.
+                    (when (and (concrete-syntax-tree:atom doc-candidate-cst)
+                               (stringp (concrete-syntax-tree:raw doc-candidate-cst))
+                               (or (not (concrete-syntax-tree:rest rest-args-cst))
+                                   (concrete-syntax-tree:null (concrete-syntax-tree:rest rest-args-cst))))
+                      (setf docstring (concrete-syntax-tree:raw doc-candidate-cst))))))))
+        ;; arg-list-cst is NIL (ATOM-CST) or not a CONSP: handles (DEFVAR name).
+        ;; For DEFPARAMETER/DEFCONSTANT, init-form-cst remains nil.
+        ;; The analyzer should be robust to this, though it's invalid Lisp.
+        (when (and (not (eq (analysis-kind analysis) 'defvar))
+                   (or (null arg-list-cst) (not (concrete-syntax-tree:consp arg-list-cst))))
+          ;; This indicates a malformed DEFPARAMETER or DEFCONSTANT (missing init-value)
+          ;; We could warn here, but the primary goal is robust parsing.
+          ;; init-form-cst is already nil.
+          nil))
 
-      (setf (analysis-name analysis) name
-            (analysis-docstring analysis) doc
-            (analysis-raw-body analysis) body-cst)
+    (setf (analysis-name analysis) raw-name
+          (analysis-docstring analysis) docstring
+          (analysis-raw-body analysis) init-form-cst)
 
-      ;; Store detailed lambda list information from the new parser
-      (setf (analysis-lambda-info analysis) parsed-ll)
-
-      ;; Populate analysis-parameters
-      (let ((detailed-params '()))
-        (when parsed-ll
-          ;; First, collect all parameter plists for (analysis-parameters analysis)
-          (dolist (p (getf parsed-ll :required)) (push p detailed-params))
-          (dolist (p (getf parsed-ll :optionals)) (push p detailed-params))
-          (let ((rest-p (getf parsed-ll :rest)))
-            (when rest-p (push rest-p detailed-params)))
-          (dolist (p (getf parsed-ll :keys)) (push p detailed-params))
-          (dolist (p (getf parsed-ll :aux)) (push p detailed-params))
-          (setf (analysis-parameters analysis) (nreverse detailed-params)))
-
-        ;; Now, iterate over the collected parameter details
-        ;; to apply the new helper functions.
-        (dolist (p (analysis-parameters analysis))
-          (process-parameter-lexical-defs p analysis)
-          ;; Note: :specialized context for defmethod
-          (process-parameter-csts p analysis :specialized)
-          (when (getf p :destructured)
-            (process-destructured-parameter p analysis :specialized))))
-
-      ;; Analyze the method body
-      (when body-cst
-        (walk-cst-with-context
-         body-cst
-         (lambda (current-body-cst path tail)
-           (declare (ignore path tail))
-           (gather-info current-body-cst analysis)))))
+    ;; Analyze the initial value form if present (i.e., not a NIL-CST or raw NIL)
+    (when init-form-cst ; walk-cst-with-context handles atom CSTs appropriately
+      (walk-cst-with-context
+       init-form-cst
+       (lambda (current-init-cst path tail)
+         (declare (ignore path tail))
+         (gather-info current-init-cst analysis))))
     analysis))
 
 ;;; Specialized method for ANALYZE-CST for DEFTYPE forms.
 (defmethod analyze-cst (cst (analysis deftype-analysis))
   "Analyzes a DEFTYPE CST to extract name, lambda list, docstring, and body.
    Populates the DEFTYPE-ANALYSIS object."
-  (let* ((name-cst     (concrete-syntax-tree:second cst))
-         (args-cst     (concrete-syntax-tree:third cst))
+  (let* ((name-cst (concrete-syntax-tree:second cst))
+         (args-cst (concrete-syntax-tree:third cst))
          (possible-doc (concrete-syntax-tree:fourth cst))
-         (doc          (when (and possible-doc
-                                  (concrete-syntax-tree:atom possible-doc)
-                                  (stringp (concrete-syntax-tree:raw possible-doc)))
-                         (concrete-syntax-tree:raw possible-doc)))
-         (body-cst     (if doc
-                           (concrete-syntax-tree:nthrest 4 cst)
-                           (concrete-syntax-tree:nthrest 3 cst)))
-         (name         (concrete-syntax-tree:raw name-cst))
+         (doc (when (and possible-doc
+                         (concrete-syntax-tree:atom possible-doc)
+                         (stringp (concrete-syntax-tree:raw possible-doc)))
+                (concrete-syntax-tree:raw possible-doc)))
+         (body-cst (if doc
+                       (concrete-syntax-tree:nthrest 4 cst)
+                       (concrete-syntax-tree:nthrest 3 cst)))
+         (name (concrete-syntax-tree:raw name-cst))
          (lambda-list-cst args-cst)
          (parsed-ll (if (and lambda-list-cst (concrete-syntax-tree:consp lambda-list-cst))
                         (parse-lambda-list-cst lambda-list-cst :context :deftype)
