@@ -41,27 +41,224 @@ Can be found [[file:terms-and-definitions.org][here]].
 
 * Introduction
 
-* [Project name]
+The =cl-naive-code-analyzer= library provides tools for parsing and analyzing Common Lisp code. It uses Concrete Syntax Trees (CSTs) to represent code structure and offers functionalities to extract information about definitions, function calls, variable usage, and more. It is designed to be extensible for different types of Lisp forms and provides a querying interface to find specific code elements.
 
-* Tutorials
+* Installation
 
-Tutorials can be found [[file:tutorials.org][here]].
+To use =cl-naive-code-analyzer=, ensure it is loaded into your Lisp environment, typically via ASDF:
+#+BEGIN_SRC lisp
+(asdf:load-system :cl-naive-code-analyzer)
+#+END_SRC
 
-* How Tos
+Ensure that its dependencies, such as =cl-getx= and =cl-naive-store=, are also available.
 
-How Tos can be found [[file:how-tos.org][here]].
+* Usage
 
-* API
+The primary entry point for analyzing a project is the =analyze-project= function. This function processes Lisp files, builds a database of analysis objects, and allows querying this database.
 
-** [special] =*tags*=
+#+BEGIN_SRC lisp
+;; Example: Analyze a project and find all function definitions
+(ql:quickload :cl-naive-code-analyzer)
+(use-package :cl-naive-code-analyzer)
 
-** [function] tag-convert (tag)
+;; Assuming you have a project defined via ASDF
+(analyze-project :my-project-system)
 
-** [class] element (tag element-type attributes children)
+;; Query for all defined functions
+(query-analyzer (make-instance 'query)
+                (lambda (analysis)
+                  (eq (analysis-kind analysis) 'defun)))
+#+END_SRC
 
-** [generic function] emit-element (type element-type tag element path &key &allow-other-keys)
+* API Reference
 
-** [macro] with-js (&body body)
+This section details the exported symbols from the =cl-naive-code-analyzer= package.
+
+** Core Classes and Functions
+
+*** [class] analysis
+    :PROPERTIES:
+    :CUSTOM_ID: class-analysis
+    :END:
+    The base class for all code analysis objects. It stores common information extracted from a Lisp form.
+
+    *Slots*:
+    - =name=: The name of the analyzed form (e.g., function name, class name).
+    - =kind=: The type of the form (e.g., =defun=, =defclass=).
+    - =cst=: The Concrete Syntax Tree of the form.
+    - =start=: Start position of the form in the source code.
+    - =end=: End position of the form in the source code.
+    - =line=: Starting line number of the form.
+    - =package=: The package in which the form is defined.
+    - =function-calls=: A list of global functions called within this form.
+    - =macro-calls=: A list of global macros called within this form.
+    - =variable-uses=: (Potentially, based on future enhancements) A list of global variables used.
+    - =local-function-calls=: (Potentially) A list of local functions called.
+    - =local-variable-uses=: (Potentially) A list of local variables used.
+    - =lexical-definitions=: A list of symbols bound lexically within the form (e.g., parameters, let-bound variables).
+    - =dynamic-definitions=: (Potentially) A list of symbols defined dynamically.
+    - =raw-body=: The CST representing the body of the form (e.g., function body, macro body, initial value of a variable).
+
+*** [function] analyze-project (project-name &key (store *store*))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-analyze-project
+    :END:
+    Analyzes all Lisp files in the specified ASDF project =project-name=.
+    Populates the given =store= (defaults to =*store*=) with analysis objects.
+
+*** [generic function] analyze-cst (cst analysis)
+    :PROPERTIES:
+    :CUSTOM_ID: gf-analyze-cst
+    :END:
+    Analyzes a given Concrete Syntax Tree (=cst=) and populates the provided =analysis= object with extracted information. This is a generic function that dispatches on the type of the =analysis= object (e.g., =defun-analysis=, =defclass-analysis=).
+
+*** [function] load-project (project-name &key (store *store*))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-load-project
+    :END:
+    Loads previously analyzed project data for =project-name= from the specified =store=. (Note: Behavior might depend on =cl-naive-store= capabilities for persistence, which is not detailed here.)
+
+** Accessors for =analysis= Objects
+
+Many accessors are provided to retrieve specific pieces of information from an =analysis= object. These correspond to the slots of the =analysis= class and its subclasses.
+
+**** [function] analysis-name (analysis)
+     Returns the name of the analyzed form.
+**** [function] analysis-kind (analysis)
+     Returns the kind of the analyzed form (e.g., 'DEFUN).
+**** [function] analysis-cst (analysis)
+     Returns the Concrete Syntax Tree (CST) of the form.
+**** [function] analysis-start (analysis)
+     Returns the start position of the form in the source.
+**** [function] analysis-end (analysis)
+     Returns the end position of the form in the source.
+**** [function] analysis-line (analysis)
+     Returns the starting line number of the form.
+**** [function] analysis-package (analysis)
+     Returns the package of the analyzed form.
+**** [function] analysis-function-calls (analysis)
+     Returns a list of global function calls made within the form.
+**** [function] analysis-macro-calls (analysis)
+     Returns a list of global macro calls made within the form.
+**** [function] analysis-variable-uses (analysis)
+     (Potentially) Returns a list of global variable uses.
+**** [function] analysis-local-function-calls (analysis)
+     (Potentially) Returns a list of local function calls.
+**** [function] analysis-local-variable-uses (analysis)
+     (Potentially) Returns a list of local variable uses.
+**** [function] analysis-lexical-definitions (analysis)
+     Returns a list of symbols defined lexically within the form.
+**** [function] analysis-dynamic-definitions (analysis)
+     (Potentially) Returns a list of symbols defined dynamically.
+**** [function] analysis-raw-body (analysis)
+     Returns the CST of the body/value part of the form.
+
+** Specialized Analysis Information Accessors
+
+These accessors retrieve information specific to certain types of definitions.
+
+**** [function] analysis-lambda-info (analysis)
+     For forms with lambda lists (e.g., =defun=, =defmacro=), returns parsed lambda list information. This is typically a plist from =parse-lambda-list-cst=.
+**** [function] analysis-parameters (analysis)
+     For forms with lambda lists, returns a list of =parameter-detail= structures providing detailed information about each parameter.
+**** [function] analysis-docstring (analysis)
+     Returns the documentation string of the form, if present.
+**** [function] analysis-slots (analysis)
+     For classes (=defclass=), conditions (=define-condition=), and structures (=defstruct=), returns a list of slot names or slot definitions.
+**** [function] analysis-superclasses (analysis)
+     For classes (=defclass=) and conditions (=define-condition=), returns a list of superclass names.
+
+** DEFPACKAGE Specific Accessors
+
+These accessors are for =defpackage-analysis= objects.
+
+**** [function] analysis-nicknames (analysis)
+     Returns a list of nicknames for the package.
+**** [function] analysis-uses (analysis)
+     Returns a list of packages to use.
+**** [function] analysis-exports (analysis)
+     Returns a list of symbols to export.
+**** [function] analysis-shadows (analysis)
+     Returns a list of symbols to shadow.
+**** [function] analysis-imports (analysis)
+     Returns a list of symbols to import (from =:import-from=).
+**** [function] analysis-interns (analysis)
+     Returns a list of symbols to intern.
+**** [function] analysis-size (analysis)
+     Returns the size hint for the package, if specified.
+
+** Querying API
+
+The library provides a flexible way to query the analyzed code.
+
+*** [macro] defquery (name lambda-list &body body)
+    :PROPERTIES:
+    :CUSTOM_ID: macro-defquery
+    :END:
+    Defines a new query function named =name=. The =lambda-list= specifies parameters for the query, and the =body= should evaluate to a predicate function that takes an =analysis= object and returns true if it matches the query criteria.
+
+*** [function] query-analyzer (query-object predicate &key (store *store*))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-query-analyzer
+    :END:
+    Executes a =query= against the analysis data in the specified =store=.
+    - =query-object=: An instance of a query, often created by functions like =make-callers-of-query=.
+    - =predicate=: A function that takes an =analysis= object and returns true for matches.
+    Returns a list of matching =analysis= objects.
+
+*** [function] match-symbol (symbol pattern &key (package nil package-supplied-p))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-match-symbol
+    :END:
+    A utility function for matching symbols, potentially with package qualification. =pattern= can be a symbol or a string for partial matching.
+
+*** [function] make-callers-of-query (function-name &key (package nil package-supplied-p))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-make-callers-of-query
+    :END:
+    Creates a query object to find all forms that call the specified =function-name=.
+
+*** [function] make-uses-symbol-query (symbol-name &key (package nil package-supplied-p))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-make-uses-symbol-query
+    :END:
+    Creates a query object to find all forms that use the specified =symbol-name=.
+
+*** [function] make-functions-in-file-query (filepath)
+    :PROPERTIES:
+    :CUSTOM_ID: fun-make-functions-in-file-query
+    :END:
+    Creates a query object to find all function definitions within the specified =filepath=.
+
+*** [function] find-function (function-name &key (package nil package-supplied-p) (store *store*))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-find-function
+    :END:
+    A convenience function to find the analysis object for a specific function named =function-name=.
+
+*** [function] uncalled-functions (&key (store *store*))
+    :PROPERTIES:
+    :CUSTOM_ID: fun-uncalled-functions
+    :END:
+    Attempts to find functions in the =store= that are not called by any other analyzed form in the same store.
+
+** Analysis Classes (Subclasses of =analysis=)
+
+The =analyzers.lisp= file defines several subclasses of =analysis=, specialized for different Lisp definition types. These include:
+- =defun-analysis=
+- =defmethod-analysis=
+- =define-condition-analysis=
+- =defclass-analysis=
+- =defparameter-analysis= (also used for =defvar=, =defconstant=)
+- =defmacro-analysis=
+- =deftype-analysis=
+- =defgeneric-analysis=
+- =defstruct-analysis=
+- =defsetf-analysis=
+- =define-symbol-macro-analysis=
+- =defpackage-analysis=
+
+Each of these classes may have additional slots and accessors specific to the information they capture (e.g., =analysis-lambda-info=, =analysis-slots=, =analysis-superclasses=). Refer to the source code of =src/analyzers.lisp= for detailed slot definitions if needed.
 
 
 * Epilogue                                                         :noexport:
