@@ -64,6 +64,76 @@
     ;; Persist the multiverse definition (which includes the universe definition).
     (cl-naive-store:persist *multiverse* :definitions-only-p t)))
 
+;; Loads and/or initializes store.
+;; If projects are supplied only those will be loaded.
+(defun load-naive-store (&optional projects)
+  ;; Ensure multiverse and universe are initialized
+  (init-naive-store)
+
+  ;;If no projects are supplied we load the whole universe.
+  (if (not projects)
+      (cl-naive-store:load-from-definitions
+       *multiverse*
+       :universe :with-children-p t :with-data-p t)
+      (let ((*universe* (or *universe*
+                            (add-multiverse-element
+                             *universe*
+                             (add-multiverse-element
+                              *multiverse*
+                              (make-instance
+                               'cl-naive-store:universe
+                               :name *universe-name*
+                               :multiverse *multiverse*
+                               :location (universe-location)
+                               :store-class 'cl-naive-store:store))))))
+
+        (dolist (project-name projects)
+          (let* ((store (cl-naive-store:get-multiverse-element
+                         :store *universe* project-name))
+                 (collection (and store (cl-naive-store:get-multiverse-element
+                                         :collection store *collection-name*))))
+
+            ;;If it does not exist create and persist
+            (unless store
+              (setf store (add-multiverse-element
+                           *universe*
+                           (make-instance
+                            (store-class *universe*)
+                            :name project-name
+                            ;; Use indexed-collection for efficient lookups.
+                            :collection-class
+                            'cl-naive-store.naive-indexed:indexed-collection)))
+              (persist store))
+            (unless collection
+              (setf collection (cl-naive-store:add-multiverse-element
+                                store
+                                (make-instance
+                                 (collection-class store)
+                                 :name *collection-name*
+                                 :indexes '(;; Index by definition name.
+                                            (:name)
+                                            ;; Index by file name.
+                                            (:file-name)
+                                            ;; Index by definition
+                                            ;; name and file name
+                                            (:name :file-name))))))
+
+            (unless (cl-naive-store:documents collection)
+              (cl-naive-store:load-data collection)))))))
+
+(defun load-project (project-name)
+  "Initializes or loads the necessary store and collection for the given PROJECT name.
+   Returns the 'code-definitions' collection for the project.
+   Assumes project data has already been indexed and stored."
+  ;; Ensure the universe is initialized.
+  (load-naive-store (list project-name))
+
+  ;; Attempt to retrieve an existing store for the project.
+  (cl-naive-store:get-multiverse-element
+   :collection (cl-naive-store:get-multiverse-element
+                :store *universe* project-name)
+   *collection-name*))
+
 ;; Helper function to create a plist with information about a symbol.
 (defun symbol-info (sym)
   "Returns a plist containing the name, package name, and internal status of SYM.
@@ -111,57 +181,6 @@
     (t
      (error "Invalid binding form: ~S. Expected a symbol or (symbol [type-symbol])."
             binding))))
-
-;; Initializes or retrieves a store for a given project name within
-;; the main universe.  Also ensures a collection named
-;; "code-definitions" exists within that store, configured with
-;; indexes for querying.
-(defun init-project (project-name)
-  "Initializes or retrieves a store for PROJECT-NAME within the global *universe*.
-   Ensures a collection 'code-definitions' exists with appropriate indexes.
-   Returns the 'code-definitions' collection object."
-  ;; Ensure the universe is initialized.
-  (when (or (not *multiverse*) (not *universe*))
-    (init-naive-store))
-
-  ;; Attempt to retrieve an existing store for the project.
-  (let* ((store (cl-naive-store:get-multiverse-element
-                 :store *universe* project-name))
-
-         ;; Attempt to retrieve the "code-definitions" collection from
-         ;; the store if the store exists.
-         (collection (when store
-                       (cl-naive-store:get-multiverse-element
-                        :collection store *collection-name*))))
-
-    ;; If the store doesn't exist, create it.
-    (unless store
-      (setf store (add-multiverse-element
-                   *universe*
-                   (make-instance
-                    (store-class *universe*)
-                    :name project-name
-                    ;; Use indexed-collection for efficient lookups.
-                    :collection-class
-                    'cl-naive-store.naive-indexed:indexed-collection)))
-      ;; Persist the new store definition.
-      (persist store :definitions-only-p t))
-
-    ;; If the collection doesn't exist within the store, create it.
-    (unless collection
-      (setf collection
-            (cl-naive-store:add-multiverse-element
-             store
-             (make-instance (collection-class store)
-                            :name *collection-name*
-                            ;; Define indexes for common query patterns.
-                            :indexes '((:name) ; Index by definition name.
-                                       (:file-name) ; Index by file name.
-                                       (:name :file-name))))) ; Composite index.
-      ;; Persist the new collection definition.
-      (persist collection :definitions-only-p t))
-    ;; Return the collection, whether retrieved or newly created.
-    collection))
 
 ;; Looks up definitions by name in the given collection.
 

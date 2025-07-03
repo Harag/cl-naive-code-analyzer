@@ -523,7 +523,7 @@ Subclasses of 'analysis' should specialize this to include type-specific informa
    Each top-level form's analysis is stored as a separate document."
   ;; TODO: Ensure `init-project-store` is defined and correctly sets up the store.
   ;; TODO: Consider batching writes or other optimizations for large projects.
-  (let ((collection (init-project (project-name project))))
+  (let ((collection (load-project (project-name project))))
     (dolist (file (project-files project))
       (let* ((filename (namestring (file-path file)))
              ;; Analyses should already be sorted by `analyze-file`
