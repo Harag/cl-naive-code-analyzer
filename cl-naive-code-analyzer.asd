@@ -11,8 +11,12 @@
   :version "2025.3.3"
   :author "" ; TODO: Add author information here.
   :licence "MIT"
-  :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store alexandria)
+  :depends-on (eclector eclector-concrete-syntax-tree concrete-syntax-tree trivial-gray-streams cl-naive-store alexandria jonathan usocket bordeaux-threads puri drakma cl-ppcre)
   :components ((:file "src/package")
+               (:file "src/mcp-server/packages"
+                :depends-on ("src/package"))
+               (:file "src/mcp-server/server"
+                :depends-on ("src/mcp-server/packages"))
                (:file "src/lambda-list-parser"
                 :depends-on ("src/package"))
                (:file "src/utils"

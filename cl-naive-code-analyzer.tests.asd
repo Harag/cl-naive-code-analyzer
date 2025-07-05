@@ -8,8 +8,10 @@
   :depends-on ("alexandria"
                "cl-getx"
                "cl-naive-tests"
-               "cl-naive-code-analyzer")
+               "cl-naive-code-analyzer"
+               "usocket") ; for mock client in mcp tests
   :components
   ((:file "tests/package")
    (:file "tests/tests" :depends-on ("tests/package"))
+   (:file "tests/test-mcp-server" :depends-on ("tests/package" "tests/tests")) ; Ensure base test setup runs first
   ))

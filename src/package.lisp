@@ -49,7 +49,9 @@
 
    :analyze-project
 
-   ;;Query
+   ;;Store and Query
+   :init-naive-store ; Added for MCP tests
+   :load-naive-store ; Added for MCP server
    :load-project
    :defquery
    :match-symbol
@@ -58,5 +60,7 @@
    :make-functions-in-file-query
    :query-analyzer
    :find-function
-   :uncalled-functions))
+   :uncalled-functions
+   :analyze-string ; Added for MCP tests
+   ))
 
