@@ -10,6 +10,8 @@ $ cat .gitignore
 *.#
 .#*
 
+git-safe-full-sync-summary.log
+git-safe-full-sync.log
 junit-results.xml
 system-index.txt
 tests/artifacts
